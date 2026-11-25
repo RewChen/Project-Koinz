@@ -695,3 +695,59 @@ describe('Phase 3 — หลังบ้าน', () => {
     assert.ok(s.readData('audit').some((a) => a.action === 'games_update' && a.actor === 'admin'));
   });
 });
+
+// ---------------------------------------------------------------------------
+describe('Phase 4 — GitHub Pages และเอกสาร', () => {
+  const PUBLIC = path.join(ROOT, 'public');
+  const pages = fs.readdirSync(PUBLIC).filter((f) => f.endsWith('.html'));
+
+  test('ไม่มี path แบบ absolute ใน public/ (รันใต้ /Project-Koinz/ ได้)', () => {
+    for (const page of pages) {
+      const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8');
+      const bad = html.match(/(?:href|src)="\/(?!\/)[^"]*"|location\.href\s*=\s*[`'"]\//g);
+      assert.equal(bad, null, `${page}: ${bad}`);
+    }
+  });
+
+  test('เปิดผ่าน static server ที่ /Project-Koinz/ แล้วโหลด CSS/JS ได้ทุกหน้า', async () => {
+    const srv = await fakeServer((app) => app.use('/Project-Koinz', express.static(PUBLIC)));
+    try {
+      const base = `${srv.url}/Project-Koinz/`;
+      const index = await fetch(base);
+      assert.equal(index.status, 200);
+      for (const page of pages) {
+        const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8');
+        const refs = [...html.matchAll(/(?:href|src)="([^"]+)"/g)]
+          .map((m) => m[1])
+          .filter((u) => !/^(https?:|\/\/|#|data:|mailto:|\$\{)/.test(u) && !u.includes('${'));
+        assert.ok(refs.includes('css/style.css') && refs.includes('js/config.js') && refs.includes('js/common.js'), page);
+        for (const ref of refs) {
+          const url = new URL(ref, base + page);
+          const r = await fetch(url);
+          assert.equal(r.status, 200, `${page} → ${ref}`);
+        }
+      }
+      // config.js ต้องโหลดก่อน common.js
+      for (const page of pages) {
+        const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8');
+        assert.ok(html.indexOf('js/config.js') < html.indexOf('js/common.js'), page);
+      }
+    } finally {
+      await srv.close();
+    }
+  });
+
+  test('README อธิบายตัวแปร .env ครบทุกตัวที่โค้ดอ่าน และ .env.example มีครบ', () => {
+    const code = ['server.js', ...fs.readdirSync(path.join(ROOT, 'src')).map((f) => path.join('src', f))]
+      .map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8'))
+      .join('\n');
+    const vars = [...new Set([...code.matchAll(/env\.([A-Z][A-Z0-9_]+)/g)].map((m) => m[1]))];
+    assert.ok(vars.length >= 20, `อ่าน env ได้ ${vars.length} ตัว`);
+    const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+    const example = fs.readFileSync(path.join(ROOT, '.env.example'), 'utf8');
+    for (const v of vars) {
+      assert.match(readme, new RegExp('`' + v + '`'), `README ไม่มี ${v}`);
+      if (v !== 'KOINZ_DATA_DIR') assert.match(example, new RegExp('^' + v + '=', 'm'), `.env.example ไม่มี ${v}`);
+    }
+  });
+});

@@ -28,10 +28,14 @@ function uuid() {
   return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 }
 
+// ต่อ path ของ API เข้ากับ KOINZ_API (จาก js/config.js) เผื่อ API อยู่คนละโดเมน
+const apiUrl = (path) => String(window.KOINZ_API || '').replace(/\/+$/, '') + path;
+
 async function api(url, { method = 'GET', body, headers = {} } = {}) {
-  const res = await fetch(url, {
+  const res = await fetch(apiUrl(url), {
     method,
-    headers: { 'Content-Type': 'application/json', ...headers },
+    // ใส่ Content-Type เฉพาะตอนมี body — GET ข้ามโดเมนจะได้ไม่ต้องมี preflight
+    headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));

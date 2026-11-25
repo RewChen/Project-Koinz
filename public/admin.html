@@ -7,19 +7,20 @@
   <title>หลังบ้าน — Koinz</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500&family=Mitr:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="admin">
   <header class="top">
     <div class="wrap">
-      <a class="logo" href="/"><span class="coin coin-mini">K</span><span>หลังบ้าน <span data-shop>Koinz</span></span></a>
+      <a class="logo" href="./"><span class="coin coin-mini">K</span><span>หลังบ้าน <span data-shop>Koinz</span></span></a>
       <nav><button class="btn ghost small" id="logout" hidden>ออกจากระบบ</button></nav>
     </div>
   </header>
 
   <main class="wrap" id="app"></main>
 
-  <script src="/js/common.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/common.js"></script>
   <script>
     let token = sessionStorage.getItem('koinz_admin') || '';
     const auth = () => ({ Authorization: 'Bearer ' + token });

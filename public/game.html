@@ -6,19 +6,20 @@
   <title>เติมเกม — Koinz</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500&family=Mitr:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header class="top">
     <div class="wrap">
-      <a class="logo" href="/"><span class="coin coin-mini">K</span><span data-shop>Koinz</span></a>
-      <nav><a href="/#games">เกมทั้งหมด</a><a href="/#mine">ออเดอร์ของฉัน</a></nav>
+      <a class="logo" href="./"><span class="coin coin-mini">K</span><span data-shop>Koinz</span></a>
+      <nav><a href="./#games">เกมทั้งหมด</a><a href="./#mine">ออเดอร์ของฉัน</a></nav>
     </div>
   </header>
 
   <main class="wrap" id="app"><p class="empty">กำลังโหลด…</p></main>
 
-  <script src="/js/common.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/common.js"></script>
   <script>
     const slug = new URLSearchParams(location.search).get('slug');
     let game, cfg = {}, selected = null;
@@ -162,7 +163,7 @@
             body: { gameSlug: game.slug, packageId: selected.id, playerInputs: inputs, idempotencyKey: idemKey },
           });
           myOrders.add({ id, token, gameName: game.name, packageName: selected.name });
-          location.href = `/order.html?id=${encodeURIComponent(id)}&t=${encodeURIComponent(token)}`;
+          location.href = `order.html?id=${encodeURIComponent(id)}&t=${encodeURIComponent(token)}`;
         } catch (ex) {
           err.textContent = ex.message;
           btn.disabled = false;
@@ -173,7 +174,7 @@
 
     Promise.all([api('/api/games/' + encodeURIComponent(slug || '')), shopConfig])
       .then(([g, c]) => { game = g; cfg = c; render(); })
-      .catch((e) => ($('#app').innerHTML = `<p class="error">${esc(e.message)}</p><p><a href="/">กลับไปเลือกเกม</a></p>`));
+      .catch((e) => ($('#app').innerHTML = `<p class="error">${esc(e.message)}</p><p><a href="./">กลับไปเลือกเกม</a></p>`));
   </script>
 </body>
 </html>

@@ -1,11 +1,18 @@
 # Koinz — เว็บเติมเกม
 
-เว็บเติมเกมแบบครบวงจร: ลูกค้าเลือกเกม → กรอก UID → เลือกแพ็กเกจ → สแกนจ่าย QR PromptPay → ร้านตรวจสอบและเติมให้ผ่านหลังบ้าน
+เว็บเติมเกมแบบครบวงจร: ลูกค้าเลือกเกม → กรอกข้อมูลผู้เล่น (ช่องตามแต่ละเกม) → เลือกแพ็กเกจ → สแกนจ่าย QR PromptPay → ระบบยืนยันยอด (webhook หรือแอดมิน) → เติมเข้าเกม (อัตโนมัติผ่าน supplier หรือแอดมินเติมเอง)
+
+- เบา: Express + HTML/JS ล้วน + ไฟล์ JSON ไม่ต้องมี Redis/ฐานข้อมูล
+- ออเดอร์หมดอายุเอง, กันสั่งซ้ำ (idempotency), สถานะ real-time ผ่าน SSE
+- Webhook ยืนยันการชำระเงินแบบ HMAC (รับยอดที่โอนมาหลังหมดเวลาด้วย)
+- คิวเติมเกมอัตโนมัติพร้อม retry ทำต่อได้หลังรีสตาร์ท
+- หลังบ้าน: สรุปยอด ค้นหา ปุ่มลัด และ audit log ทุกการเปลี่ยนสถานะ
+- Rate limit, security headers, ลิงก์ออเดอร์ต้องมี token
 
 ## เริ่มใช้งาน (Windows)
 
-1. ติดตั้ง [Node.js](https://nodejs.org) เวอร์ชัน 18 ขึ้นไป
-2. เปิด Command Prompt / PowerShell แล้วรัน
+1. ติดตั้ง [Node.js](https://nodejs.org) เวอร์ชัน 18 ขึ้นไป (แนะนำ 22)
+2. เปิด PowerShell แล้วรัน
    ```
    cd D:\koinz
    npm install
@@ -18,62 +25,244 @@
    ```
 5. เปิด http://localhost:3000 (หน้าร้าน) และ http://localhost:3000/admin.html (หลังบ้าน)
 
+| คำสั่ง | ใช้ทำอะไร |
+|---|---|
+| `npm start` | รันเซิร์ฟเวอร์ |
+| `npm run dev` | รันแบบรีสตาร์ทเองเมื่อแก้โค้ด |
+| `npm test` | รันเทส API ทั้งหมด (`node:test` ไม่ต้องติดตั้งเพิ่ม) |
+
 ## โครงสร้างโปรเจกต์
 
 ```
 koinz/
-├── server.js            # Backend (Express) + API ทั้งหมด
+├── server.js              # เช็คค่าตั้งค่า → listen → เริ่มงานเบื้องหลัง
 ├── src/
-│   ├── promptpay.js     # สร้าง QR PromptPay พร้อมยอดเงิน
-│   ├── store.js         # ฐานข้อมูลแบบไฟล์ JSON
-│   └── env.js           # โหลดค่าจาก .env
-├── data/
-│   ├── games.json       # รายชื่อเกม แพ็กเกจ ราคา
-│   └── orders.json      # ออเดอร์ (สร้างอัตโนมัติ)
-└── public/              # Frontend
-    ├── index.html       # หน้าแรก / เลือกเกม
-    ├── game.html        # หน้าเติมเกม
-    ├── order.html       # หน้าชำระเงิน + ติดตามสถานะ
-    ├── admin.html       # หลังบ้าน
-    ├── css/style.css
-    └── js/common.js
+│   ├── env.js             # โหลด .env
+│   ├── config.js          # อ่านตัวแปร env ทั้งหมดที่เดียว
+│   ├── store.js           # ฐานข้อมูลไฟล์ JSON (cache + เช็ค mtime, เขียนแบบ atomic)
+│   ├── catalog.js         # เกม/แพ็กเกจ, ตรวจข้อมูลผู้เล่นตาม fields, ตรวจแคตตาล็อกก่อนบันทึก
+│   ├── orders.js          # สถานะออเดอร์, transition(), audit log, event bus
+│   ├── jobs.js            # คิวเติมเกม + retry, กวาดออเดอร์หมดอายุ
+│   ├── adapters.js        # ตรวจชื่อในเกม, supplier, แจ้งเตือนแอดมิน
+│   ├── security.js        # rate limit, security headers, CORS
+│   ├── app.js             # createApp(): ทุก route
+│   └── promptpay.js       # สร้าง payload QR PromptPay (ห้ามแก้)
+├── data/                  # (หรือโฟลเดอร์ใน KOINZ_DATA_DIR)
+│   ├── games.json         # เกม ช่องข้อมูลผู้เล่น แพ็กเกจ ราคา
+│   ├── orders.json        # ออเดอร์ (สร้างอัตโนมัติ)
+│   ├── jobs.json          # คิวเติมเกม (สร้างอัตโนมัติ)
+│   └── audit.json         # ประวัติการเปลี่ยนแปลง 5,000 รายการล่าสุด (สร้างอัตโนมัติ)
+├── docs/games.v2.json     # แคตตาล็อกตัวอย่าง 6 เกม
+├── public/                # Frontend (ขึ้น GitHub Pages ได้ ทุก path เป็นแบบ relative)
+│   ├── index.html         # หน้าแรก / เลือกเกม / ออเดอร์ของฉัน
+│   ├── game.html          # หน้าเติมเกม (ฟอร์มสร้างจาก fields)
+│   ├── order.html         # ชำระเงิน + ติดตามสถานะ real-time
+│   ├── admin.html         # หลังบ้าน (ไม่ขึ้น Pages)
+│   ├── css/style.css
+│   └── js/config.js       # URL ของ API (ค่าว่าง = โดเมนเดียวกัน)
+│       js/common.js
+├── test/api.test.js       # เทส end-to-end
+└── .github/workflows/deploy.yml   # deploy หน้าร้านขึ้น GitHub Pages
 ```
 
 ## ขั้นตอนของออเดอร์
 
-| สถานะ | ความหมาย | ใครเปลี่ยน |
+```
+pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืนยันยอด─▶ paid ─▶ processing ─▶ completed
+    │ หมดเวลา                  ▲                           ▲             │
+    ▼                          │ แจ้งโอนช้า                │ webhook     │ เติมไม่สำเร็จครบทุกครั้ง
+ expired ──────────────────────┴───────────────────────────┘             ▼
+                                                        paid ◀─เติมใหม่─ refund_needed ─▶ refunded
+```
+
+| สถานะ | ข้อความที่ลูกค้าเห็น | ความหมาย | ใครเปลี่ยน |
+|---|---|---|---|
+| `pending_payment` | รอชำระเงิน | สร้างออเดอร์แล้ว แสดง QR และนับถอยหลัง | ระบบ (ตอนสั่ง) |
+| `paid_pending_review` | แจ้งโอนแล้ว รอร้านตรวจสอบ | ลูกค้ากด "ฉันโอนเงินแล้ว" (กดได้แม้หมดเวลาแล้ว) | ลูกค้า |
+| `paid` | ยืนยันยอดแล้ว | ยืนยันว่าเงินเข้าแล้ว — ถ้าเปิด supplier จะเข้าคิวเติมทันที | webhook / แอดมิน |
+| `processing` | กำลังเติมเข้าเกม | กำลังเรียก supplier | ระบบ (หรือแอดมิน) |
+| `completed` | เติมสำเร็จ | supplier ยืนยันแล้ว หรือแอดมินเติมเอง | ระบบ / แอดมิน |
+| `expired` | หมดเวลาชำระเงิน | ไม่จ่ายภายใน `ORDER_TTL_MINUTES` (QR หายไป) | ระบบ (ตรวจทุก 2 วินาที) |
+| `cancelled` | ยกเลิกแล้ว | ยกเลิกออเดอร์ | แอดมิน |
+| `refund_needed` | เติมไม่สำเร็จ รอคืนเงิน | จ่ายแล้วแต่เติมไม่สำเร็จครบ `FULFILL_ATTEMPTS` ครั้ง | ระบบ / แอดมิน |
+| `refunded` | คืนเงินแล้ว | คืนเงินลูกค้าเรียบร้อย | แอดมิน |
+
+ทุกการเปลี่ยนสถานะผ่าน `transition()` ใน `src/orders.js` ที่เดียว: เช็คสถานะต้นทางที่อนุญาต, บันทึก `history` และ `data/audit.json` พร้อมผู้ทำ (`customer` / `admin` / `webhook` / `system`) และ push ไปยังหน้าออเดอร์ผ่าน SSE
+
+## ตัวแปร .env
+
+| ตัวแปร | ค่าเริ่มต้น | คำอธิบาย |
 |---|---|---|
-| รอชำระเงิน | สร้างออเดอร์แล้ว แสดง QR | ระบบ |
-| แจ้งโอนแล้ว รอร้านตรวจสอบ | ลูกค้ากด "ฉันโอนเงินแล้ว" | ลูกค้า |
-| กำลังเติมเข้าเกม | ร้านเช็คยอดเข้าแล้ว | แอดมิน |
-| เติมสำเร็จ | เติมเข้าเกมเรียบร้อย | แอดมิน |
-| ยกเลิกแล้ว | ยกเลิกออเดอร์ | แอดมิน |
+| `PORT` | `3000` | พอร์ตของเว็บ |
+| `NODE_ENV` | `development` | ตั้ง `production` ตอนใช้จริง — เซิร์ฟเวอร์จะไม่ยอมเริ่มถ้า `ADMIN_PASSWORD` อ่อนเกินไป |
+| `SHOP_NAME` | `Koinz` | ชื่อร้านที่แสดงบนเว็บและในข้อความแจ้งเตือน |
+| `PROMPTPAY_ID` | `0812345678` | เบอร์โทร 10 หลัก หรือเลขบัตรประชาชน 13 หลักที่ผูก PromptPay |
+| `PROMPTPAY_NAME` | `ร้าน Koinz` | ชื่อบัญชีที่ลูกค้าเห็นตอนโอน |
+| `ADMIN_PASSWORD` | `admin1234` | รหัสผ่านหลังบ้าน (production ต้องตั้งเอง ยาว ≥ 12 ตัว และไม่ใช่ค่าตัวอย่าง) |
+| `KOINZ_DATA_DIR` | `./data` | โฟลเดอร์เก็บไฟล์ JSON (เทสใช้โฟลเดอร์ชั่วคราว) |
+| `ORDER_TTL_MINUTES` | `15` | เวลาให้ลูกค้าโอน (นาที, ใส่ทศนิยมได้) |
+| `SHOP_LINE_URL` | – | ลิงก์ LINE ร้าน แสดงในหน้าออเดอร์ |
+| `PAYMENT_WEBHOOK_SECRET` | – | รหัสลับตรวจลายเซ็น webhook ชำระเงิน — เว้นว่าง = ปิด webhook (404) |
+| `SUPPLIER_API_URL` | – | URL ของ supplier เติมเกม (ต้องตั้งคู่กับ KEY ถึงจะเปิดเติมอัตโนมัติ) |
+| `SUPPLIER_API_KEY` | – | API key ของ supplier (ส่งเป็น `Authorization: Bearer`) |
+| `FULFILL_ATTEMPTS` | `3` | จำนวนครั้งที่ลองเติมก่อนเปลี่ยนเป็น `refund_needed` |
+| `FULFILL_RETRY_BASE_SECONDS` | `3` | เวลารอก่อนลองใหม่ครั้งแรก ครั้งต่อไปเป็น 2 เท่า (3, 6, 12…) |
+| `LOOKUP_API_URL` | – | API ตรวจชื่อในเกม — เว้นว่าง (และไม่เปิด mock) = ซ่อนปุ่มตรวจชื่อ |
+| `LOOKUP_API_KEY` | – | API key ของระบบตรวจชื่อ (ส่งเป็น `Authorization: Bearer`) |
+| `LOOKUP_MOCK` | `0` | `1` = ชื่อจำลอง "ผู้เล่นทดสอบ ####" สำหรับทดสอบเท่านั้น ห้ามเปิดบนร้านจริง |
+| `ADMIN_ALERT_WEBHOOK` | – | Webhook ของ Discord หรือ Slack สำหรับแจ้งเตือนแอดมิน (ไม่ตั้ง = พิมพ์ลง log) |
+| `FRONTEND_ORIGIN` | – | โดเมนหน้าร้านที่อยู่คนละที่กับ API (CORS) คั่นหลายอันด้วย `,` เช่น `https://rewchen.github.io` |
+| `TRUST_PROXY` | – | ตั้งเมื่ออยู่หลัง nginx/proxy เช่น `1` หรือ `loopback` (ให้ rate limit เห็น IP จริง) |
+| `RATE_LIMIT_OFF` | `0` | `1` = ปิด rate limit (ใช้ตอนเทสเท่านั้น) |
 
 ## API
 
+### หน้าร้าน
+
 | Method | Path | ใช้ทำอะไร |
 |---|---|---|
-| GET | `/api/games` | รายชื่อเกม |
-| GET | `/api/games/:slug` | รายละเอียดเกม + แพ็กเกจ |
-| POST | `/api/orders` | สร้างออเดอร์ |
-| GET | `/api/orders/:id?t=token` | ดูออเดอร์ + QR |
-| POST | `/api/orders/:id/notify` | ลูกค้าแจ้งโอน |
-| POST | `/api/admin/login` | เข้าสู่ระบบแอดมิน |
-| GET | `/api/admin/orders` | ออเดอร์ทั้งหมด |
-| POST | `/api/admin/orders/:id/status` | เปลี่ยนสถานะ |
-| GET/PUT | `/api/admin/games` | ดู/แก้เกมและราคา |
+| GET | `/api/config` | `{shopName, promptPayName, shopLineUrl, lookupEnabled, autoFulfill, orderTtlMinutes}` |
+| GET | `/api/games` | รายชื่อเกม (`slug, name, category, color, currency, initial, minPrice`) |
+| GET | `/api/games/:slug` | เกม + `fields` + `packages` (ไม่มี `sku`/`cost`) |
+| POST | `/api/player/lookup` | `{gameSlug, playerInputs}` → `{nickname, mock}` · 404 ถ้ายังไม่เปิดระบบหรือไม่พบผู้เล่น · 30 ครั้ง/นาที |
+| POST | `/api/orders` | `{gameSlug, packageId, playerInputs, contact?, idempotencyKey?}` → `201 {id, token}` (key ซ้ำ → `200` ออเดอร์เดิม) · 20 ครั้ง/นาที |
+| GET | `/api/orders/:id?t=token` | ออเดอร์ + `serverTime` + `qr` (เฉพาะตอนรอโอนและยังไม่หมดเวลา) |
+| GET | `/api/orders/:id/events?t=token` | SSE: `event: status` ทุกครั้งที่สถานะเปลี่ยน, `: ping` ทุก 25 วินาที |
+| POST | `/api/orders/:id/notify` | `{t, note?, lineId?}` ลูกค้าแจ้งโอน (จาก `pending_payment` หรือ `expired`) · 10 ครั้ง/นาที |
+
+### Webhook
+
+| Method | Path | ใช้ทำอะไร |
+|---|---|---|
+| POST | `/api/webhooks/payment` | ยืนยันการชำระเงิน (เปิดเมื่อตั้ง `PAYMENT_WEBHOOK_SECRET`) |
+
+### หลังบ้าน (ต้องส่ง `Authorization: Bearer <token>` จาก login)
+
+| Method | Path | ใช้ทำอะไร |
+|---|---|---|
+| POST | `/api/admin/login` | `{password}` → `{token}` (อายุ 8 ชั่วโมง) · 5 ครั้ง/นาที |
+| POST | `/api/admin/logout` | ยกเลิก token |
+| GET | `/api/admin/stats` | `{byStatus, revenueToday, autoFulfill, webhookEnabled, lookupEnabled}` (ยอดขายวันนี้ตามเวลาไทย) |
+| GET | `/api/admin/orders?status=&q=` | ค้นจากเลขออเดอร์ / ข้อมูลผู้เล่น / contact / LINE / paymentRef (สูงสุด 500 รายการ ใหม่สุดก่อน) |
+| GET | `/api/admin/orders/:id/audit` | ประวัติทุกการเปลี่ยนสถานะ พร้อมผู้ทำ |
+| POST | `/api/admin/orders/:id/status` | `{status, note?}` → `{ok, autoFulfillQueued}` |
+| POST | `/api/admin/orders/:id/retry` | สั่งเติมใหม่ผ่าน supplier (เฉพาะ `paid` / `processing` / `refund_needed`) |
+| GET / PUT | `/api/admin/games` | ดู/แก้แคตตาล็อกทั้งร้าน (ตรวจด้วย `validateGames` ก่อนบันทึก) |
+
+Error ทุกเส้นตอบเป็น `{ "error": "ข้อความภาษาไทย" }` · ทำรายการถี่เกิน → `429` พร้อม `Retry-After`
+
+## Webhook ยืนยันการชำระเงิน
+
+ผู้ให้บริการรับชำระ (หรือสคริปต์ตรวจสลิปของร้าน) ส่ง `POST /api/webhooks/payment`
+
+- Body: `{"orderId": "KZ…", "amount": 159, "paymentRef": "เลขอ้างอิงธุรกรรม"}` (รับ `orderNumber` / `paymentReference` แทนได้)
+- Header `x-payment-signature`: HMAC-SHA256 ของ **body ที่ส่งจริงทุกไบต์** ด้วย `PAYMENT_WEBHOOK_SECRET` แบบ hex
+
+| กรณี | ผล |
+|---|---|
+| ลายเซ็นผิด / ไม่มี | `401` |
+| `paymentRef` เคยบันทึกแล้ว หรือออเดอร์จ่ายแล้ว | `200 {"received": true, "duplicate": true}` |
+| ยอดไม่ตรง (เทียบเป็นสตางค์) | `409` + แจ้งเตือนแอดมิน |
+| ออเดอร์ `pending_payment` / `paid_pending_review` / `expired` | `200 {"received": true}` → `paid` (รับยอดที่มาหลังหมดเวลาด้วย เพราะลูกค้าจ่ายจริงแล้ว) |
+| ออเดอร์ `cancelled` หรือสถานะอื่น | `409` + แจ้งเตือนแอดมินให้คืนเงิน |
+
+ทดสอบยิงเองด้วย curl + openssl (Git Bash / Linux / macOS):
+
+```bash
+SECRET='ค่าเดียวกับ PAYMENT_WEBHOOK_SECRET'
+BODY='{"orderId":"KZXXXXXXXX","amount":159,"paymentRef":"BANK-0001"}'
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" | sed 's/^.* //')
+curl -X POST http://localhost:3000/api/webhooks/payment \
+  -H 'Content-Type: application/json' \
+  -H "x-payment-signature: $SIG" \
+  -d "$BODY"
+```
+
+## เติมเกมอัตโนมัติ (supplier)
+
+เปิดเมื่อตั้งทั้ง `SUPPLIER_API_URL` และ `SUPPLIER_API_KEY` — ไม่ตั้ง = แอดมินเติมเองแล้วกด "เติมสำเร็จ" ในหลังบ้าน
+
+เมื่อออเดอร์เป็น `paid` ระบบจะเข้าคิว (`data/jobs.json`) แล้วเรียก
+
+```
+POST {SUPPLIER_API_URL}/topups
+Authorization: Bearer {SUPPLIER_API_KEY}
+Idempotency-Key: {orderId}
+{"sku": "MOBILE-LEGENDS-3", "player": {"uid": "123456789", "zone": "1234"}, "reference": "{orderId}"}
+```
+
+- ถือว่าสำเร็จเมื่อตอบ 2xx และ `status` ไม่มี หรือเป็น `success` / `succeeded` / `completed` / `ok` → `completed` และเก็บ `reference` (หรือ `id`) เป็น `supplierRef`
+- ไม่สำเร็จ (HTTP error, timeout 20 วินาที, `status: pending` ฯลฯ) → ลองใหม่ตาม `FULFILL_ATTEMPTS` หน่วงแบบทวีคูณ → ครบแล้วเป็น `refund_needed` + แจ้งเตือนแอดมิน
+- **ไม่มีทางเป็น `completed` ถ้า supplier ยังไม่ยืนยัน** ส่ง `Idempotency-Key` เดิมทุกครั้งเพื่อกันเติมซ้ำ
+- เซิร์ฟเวอร์ดับกลางคัน → เปิดใหม่แล้วทำงานที่ค้างต่อ
+- งานที่เสร็จเกิน 7 วันถูกลบทุกชั่วโมง
+
+## ตรวจชื่อในเกม
+
+- `LOOKUP_API_URL`: ระบบ POST `{"game": "<slug>", "player": {…}}` (timeout 8 วินาที) คาดหวัง `{"nickname": "…"}` · ตอบ 404 = "ไม่พบผู้เล่นนี้"
+- `LOOKUP_MOCK=1`: ชื่อจำลองสำหรับทดสอบ
+- ไม่ตั้งทั้งคู่: ซ่อนปุ่ม "ตรวจสอบชื่อในเกม" — **ระบบไม่โชว์ชื่อปลอมให้ลูกค้าจริง**
+- ตอนสร้างออเดอร์ระบบจะลองดึงชื่อเก็บใน `playerNickname` ให้แอดมินเห็น (ดึงไม่ได้ก็สั่งต่อได้)
+
+## แจ้งเตือนแอดมิน
+
+ตั้ง `ADMIN_ALERT_WEBHOOK` เป็น Webhook URL ของ Discord หรือ Slack (ส่ง `{content, text}`) ระบบแจ้งเมื่อ: ลูกค้าแจ้งโอน, ยอดโอนไม่ตรง, ได้เงินของออเดอร์ที่ยกเลิกแล้ว, เติมไม่สำเร็จครบทุกครั้ง — ส่งไม่ได้ก็ไม่กระทบการทำงานหลัก
+
+## รูปแบบ games.json
+
+```jsonc
+{
+  "slug": "mobile-legends", "name": "Mobile Legends", "category": "MOBA",
+  "color": "#2F7FD1", "currency": "เพชร", "active": true,
+  "initial": "M",                          // ไม่ใส่ = ตัวแรกของชื่อ
+  "fields": [                              // ช่องข้อมูลผู้เล่น เรียงตามที่แสดง (required ไม่ใส่ = true)
+    { "name": "uid", "label": "User ID", "placeholder": "เช่น 123456789", "hint": "…",
+      "pattern": "^[0-9]{5,12}$", "patternHint": "ใส่เฉพาะตัวเลข", "inputmode": "numeric" },
+    { "name": "server", "label": "เซิร์ฟเวอร์", "options": ["Asia", "Europe"] }   // options = dropdown
+  ],
+  "packages": [
+    { "id": "mobile-legends-1", "name": "เพชร 86", "price": 55, "tag": "ขายดี",
+      "sku": "MOBILE-LEGENDS-1", "cost": 46.75, "active": true }   // sku, cost ไม่ส่งให้หน้าร้าน
+  ]
+}
+```
+
+แก้ได้ทั้งในหลังบ้าน (แท็บ "เกมและราคา") หรือแก้ไฟล์ตรง ๆ ระหว่างเซิร์ฟเวอร์รัน (ระบบเช็ค mtime) — กติกา: slug `a-z0-9-` 2–40 ตัวไม่ซ้ำ, ต้องมี fields และ packages อย่างน้อย 1, id แพ็กเกจห้ามซ้ำทั้งร้าน, ราคา > 0 ทศนิยมไม่เกิน 2 ตำแหน่ง
+
+## Deploy: หน้าร้านบน GitHub Pages + API แยก
+
+หน้าร้าน (`public/`) เป็นไฟล์ static ทุก path เป็นแบบ relative จึงรันใต้ `https://<user>.github.io/Project-Koinz/` ได้ ส่วน API ต้องรันบนเซิร์ฟเวอร์ที่มี Node (VPS, Railway, Render ฯลฯ)
+
+1. **ขึ้น API** บนเซิร์ฟเวอร์ แล้วตั้งใน `.env`
+   ```
+   NODE_ENV=production
+   ADMIN_PASSWORD=<ยาวอย่างน้อย 12 ตัว>
+   FRONTEND_ORIGIN=https://<user>.github.io
+   TRUST_PROXY=1            # ถ้าอยู่หลัง nginx
+   ```
+   ต้องเป็น HTTPS (หน้า Pages เป็น https จะเรียก API ที่เป็น http ไม่ได้) ถ้าใช้ nginx ให้ปิด buffering ของ SSE — แอปส่ง header `X-Accel-Buffering: no` ให้แล้ว
+2. **ตั้งค่า GitHub repo**
+   - Settings → Pages → Source: **GitHub Actions**
+   - Settings → Secrets and variables → Actions → **Variables** → เพิ่ม `KOINZ_API_URL` = `https://api.ร้านของคุณ.com` (ไม่มี `/` ท้าย)
+3. **push `main`** → workflow `.github/workflows/deploy.yml` จะ copy `public/` เขียน `js/config.js` ใหม่ให้ชี้ไปที่ API แล้ว deploy (ไม่รวม `admin.html`)
+4. แอดมินเข้าหลังบ้านผ่านโดเมนของ API: `https://api.ร้านของคุณ.com/admin.html`
+
+ถ้าไม่ใช้ Pages ก็รันทั้งหมดบนเซิร์ฟเวอร์เดียวได้ตามปกติ (`js/config.js` ค่าว่าง = API อยู่โดเมนเดียวกัน) ดูแผน Docker ใน `DOCKER_SETUP.md`
 
 ## หมายเหตุสำคัญ
 
-- เกมในไฟล์ `data/games.json` เป็น **ตัวอย่าง** ให้แก้เป็นเกมที่ร้านคุณได้รับสิทธิ์ขายจริง (ผ่านหลังบ้าน แท็บ "เกมและราคา")
+- เกมใน `data/games.json` เป็น **ตัวอย่าง** ให้แก้เป็นเกมที่ร้านคุณได้รับสิทธิ์ขายจริง
 - อย่าใช้โลโก้/ชื่อเกมในลักษณะที่ทำให้ลูกค้าเข้าใจว่าเป็นเว็บทางการของผู้ให้บริการเกม
+- ลิงก์ออเดอร์มี token ลับ ใครไม่มีลิงก์ดูออเดอร์ไม่ได้ — อย่าแชร์ลิงก์ออเดอร์ในที่สาธารณะ
 
 ## ขั้นต่อไป (Roadmap)
 
 - [ ] ระบบสมาชิก + กระเป๋าเงิน (เติมเครดิตเก็บไว้)
-- [ ] ลูกค้าอัปโหลดสลิป + ตรวจสลิปอัตโนมัติ (API ตรวจสลิป)
-- [ ] Payment gateway อัตโนมัติ (เช่น Omise / 2C2P / GB Prime Pay) แทนการตรวจมือ
-- [ ] เชื่อม API ผู้ให้บริการเติมเกม เพื่อเติมอัตโนมัติ
-- [ ] ย้ายฐานข้อมูลไป PostgreSQL / MySQL
-- [ ] แจ้งเตือนออเดอร์ใหม่ผ่าน LINE / Discord
-- [ ] Rate limit + HTTPS ก่อนขึ้นเซิร์ฟเวอร์จริง
+- [ ] ลูกค้าอัปโหลดสลิป + ตรวจสลิปอัตโนมัติ (ส่งผลเข้า webhook ชำระเงินที่มีอยู่)
+- [ ] เชื่อม payment gateway จริง (เช่น Omise / 2C2P / GB Prime Pay) เข้ากับ `/api/webhooks/payment`
+- [ ] ย้ายฐานข้อมูลไป PostgreSQL (`DOCKER_SETUP.md`)
+- [ ] แจ้งเตือนผ่าน LINE Notify / LINE OA
+- [x] เชื่อม API ผู้ให้บริการเติมเกม เพื่อเติมอัตโนมัติ
+- [x] Webhook ยืนยันการชำระเงินแบบ HMAC
+- [x] แจ้งเตือนแอดมินผ่าน Discord / Slack
+- [x] Rate limit + security headers

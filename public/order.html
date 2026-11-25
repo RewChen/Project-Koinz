@@ -6,19 +6,20 @@
   <title>ออเดอร์ — Koinz</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500&family=Mitr:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header class="top">
     <div class="wrap">
-      <a class="logo" href="/"><span class="coin coin-mini">K</span><span data-shop>Koinz</span></a>
-      <nav><a href="/#games">เติมเกมอื่น</a><a href="/#mine">ออเดอร์ของฉัน</a></nav>
+      <a class="logo" href="./"><span class="coin coin-mini">K</span><span data-shop>Koinz</span></a>
+      <nav><a href="./#games">เติมเกมอื่น</a><a href="./#mine">ออเดอร์ของฉัน</a></nav>
     </div>
   </header>
 
   <main class="wrap"><div class="order" id="app"><p class="empty">กำลังโหลดออเดอร์…</p></div></main>
 
-  <script src="/js/common.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/common.js"></script>
   <script>
     const params = new URLSearchParams(location.search);
     const id = params.get('id');
@@ -134,7 +135,7 @@
         return o;
       } catch (e) {
         stopUpdates();
-        $('#app').innerHTML = `<div class="card"><p class="error">${esc(e.message)}</p><a href="/">กลับหน้าแรก</a></div>`;
+        $('#app').innerHTML = `<div class="card"><p class="error">${esc(e.message)}</p><a href="./">กลับหน้าแรก</a></div>`;
       }
     }
 
@@ -146,7 +147,7 @@
     // อัปเดตแบบ real-time ด้วย SSE ถ้าหลุดค่อยถอยไป poll ทุก 10 วินาที
     function startUpdates() {
       if (!window.EventSource) return (timer = setInterval(load, 10000));
-      live = new EventSource(`/api/orders/${encodeURIComponent(id)}/events${query}`);
+      live = new EventSource(apiUrl(`/api/orders/${encodeURIComponent(id)}/events${query}`));
       live.addEventListener('status', (e) => {
         const { status } = JSON.parse(e.data);
         if (status !== currentStatus) load();

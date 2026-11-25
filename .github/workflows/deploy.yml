@@ -1,0 +1,55 @@
+# Deploy หน้าร้าน (public/) ขึ้น GitHub Pages ทุกครั้งที่ push main
+# API รันแยกที่เซิร์ฟเวอร์ของร้าน → ตั้ง repository variable KOINZ_API_URL (Settings → Secrets and variables → Actions → Variables)
+# และตั้ง FRONTEND_ORIGIN ในฝั่ง API ให้เป็นโดเมนของ Pages (เช่น https://rewchen.github.io)
+name: Deploy frontend to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build site from public/
+        env:
+          KOINZ_API_URL: ${{ vars.KOINZ_API_URL }}
+        run: |
+          rm -rf _site
+          cp -r public _site
+          # หลังบ้านไม่ขึ้น Pages — แอดมินใช้ผ่านโดเมนของ API
+          rm -f _site/admin.html
+          if [ -z "$KOINZ_API_URL" ]; then
+            echo "::warning::ยังไม่ได้ตั้ง repository variable KOINZ_API_URL หน้าร้านจะเรียก API ที่โดเมนเดียวกัน (ใช้งานบน Pages ไม่ได้)"
+          fi
+          node -e "const u=(process.env.KOINZ_API_URL||'').trim().replace(/\/+\$/,''); require('fs').writeFileSync('_site/js/config.js', '// สร้างโดย GitHub Actions\nwindow.KOINZ_API = ' + JSON.stringify(u) + ';\n')"
+          cat _site/js/config.js
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -6,12 +6,12 @@
   <title>Koinz — เติมเกมด้วย QR PromptPay</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500&family=Mitr:wght@400;500;600&display=swap">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header class="top">
     <div class="wrap">
-      <a class="logo" href="/"><span class="coin coin-mini">K</span><span data-shop>Koinz</span></a>
+      <a class="logo" href="./"><span class="coin coin-mini">K</span><span data-shop>Koinz</span></a>
       <nav><a href="#games">เลือกเกม</a><a href="#mine">ออเดอร์ของฉัน</a></nav>
     </div>
   </header>
@@ -41,13 +41,14 @@
 
   <footer><div class="wrap">© <span data-shop>Koinz</span> — ร้านเติมเกมออนไลน์</div></footer>
 
-  <script src="/js/common.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/common.js"></script>
   <script>
     api('/api/games')
       .then((games) => {
         $('#game-list').innerHTML = games.length
           ? games.map((g) => `
-              <a class="game" href="/game.html?slug=${encodeURIComponent(g.slug)}">
+              <a class="game" href="game.html?slug=${encodeURIComponent(g.slug)}">
                 <span class="icon" style="--c:${esc(g.color)}">${esc(g.initial)}</span>
                 <span><strong>${esc(g.name)}</strong><span>${esc(g.currency)}${g.minPrice != null ? ` เริ่มต้น ${baht(g.minPrice)}` : ''}</span></span>
               </a>`).join('')
@@ -58,7 +59,7 @@
     const mine = myOrders.list();
     $('#my-orders').innerHTML = mine.length
       ? mine.map((o) => `
-          <a href="/order.html?id=${encodeURIComponent(o.id)}&t=${encodeURIComponent(o.token)}">
+          <a href="order.html?id=${encodeURIComponent(o.id)}&t=${encodeURIComponent(o.token)}">
             <span>${esc(o.gameName)} · ${esc(o.packageName)}</span><span>${esc(o.id)}</span>
           </a>`).join('')
       : '<p class="empty">ยังไม่มีออเดอร์ เลือกเกมด้านบนเพื่อเริ่มเติม</p>';
