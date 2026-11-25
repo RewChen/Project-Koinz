@@ -1,0 +1,63 @@
+[
+  {
+    "slug": "dragon-arena",
+    "name": "Dragon Arena",
+    "icon": "🐉",
+    "color": "#E8505B",
+    "currency": "เพชร",
+    "uidHint": "ดู UID ได้ที่หน้าโปรไฟล์ในเกม (มุมซ้ายบน)",
+    "servers": [],
+    "packages": [
+      { "id": "da-60", "name": "60 เพชร", "price": 29 },
+      { "id": "da-150", "name": "150 เพชร", "price": 69 },
+      { "id": "da-320", "name": "320 เพชร", "price": 139 },
+      { "id": "da-700", "name": "700 เพชร", "price": 289, "tag": "ขายดี" },
+      { "id": "da-1500", "name": "1,500 เพชร", "price": 599 },
+      { "id": "da-pass", "name": "บัตรรายเดือน", "price": 149 }
+    ]
+  },
+  {
+    "slug": "sky-legends",
+    "name": "Sky Legends",
+    "icon": "🪽",
+    "color": "#3FA7F5",
+    "currency": "คริสตัล",
+    "uidHint": "เปิดเมนูตั้งค่า > บัญชี แล้วคัดลอก Player ID",
+    "servers": ["Asia", "Global", "Europe"],
+    "packages": [
+      { "id": "sl-80", "name": "80 คริสตัล", "price": 35 },
+      { "id": "sl-400", "name": "400 คริสตัล", "price": 159, "tag": "คุ้มสุด" },
+      { "id": "sl-850", "name": "850 คริสตัล", "price": 329 },
+      { "id": "sl-1800", "name": "1,800 คริสตัล", "price": 659 }
+    ]
+  },
+  {
+    "slug": "neon-strike",
+    "name": "Neon Strike",
+    "icon": "🎯",
+    "color": "#B06CFF",
+    "currency": "เครดิต",
+    "uidHint": "ดู UID ได้ที่หน้าล็อบบี้ ใต้ชื่อผู้เล่น",
+    "servers": [],
+    "packages": [
+      { "id": "ns-100", "name": "100 เครดิต", "price": 39 },
+      { "id": "ns-310", "name": "310 เครดิต", "price": 109 },
+      { "id": "ns-520", "name": "520 เครดิต", "price": 179 },
+      { "id": "ns-1050", "name": "1,050 เครดิต", "price": 349 }
+    ]
+  },
+  {
+    "slug": "farm-tales",
+    "name": "Farm Tales",
+    "icon": "🌾",
+    "color": "#5BC46A",
+    "currency": "เหรียญทอง",
+    "uidHint": "แตะรูปโปรไฟล์ แล้วดูเลข ID ด้านล่าง",
+    "servers": [],
+    "packages": [
+      { "id": "ft-500", "name": "500 เหรียญทอง", "price": 25 },
+      { "id": "ft-1200", "name": "1,200 เหรียญทอง", "price": 59 },
+      { "id": "ft-3000", "name": "3,000 เหรียญทอง", "price": 139 }
+    ]
+  }
+]

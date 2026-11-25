@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ออเดอร์ — Koinz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500&family=Mitr:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <a class="logo" href="/"><span class="coin coin-mini">K</span><span data-shop>Koinz</span></a>
+      <nav><a href="/#games">เติมเกมอื่น</a><a href="/#mine">ออเดอร์ของฉัน</a></nav>
+    </div>
+  </header>
+
+  <main class="wrap"><div class="order" id="app"><p class="empty">กำลังโหลดออเดอร์…</p></div></main>
+
+  <script src="/js/common.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const id = params.get('id');
+    const t = params.get('t');
+    const FLOW = ['pending_payment', 'paid_pending_review', 'processing', 'completed'];
+    let timer;
+
+    function render(o) {
+      const reached = (s) => o.history.find((h) => h.status === s);
+      const timeline = o.status === 'cancelled'
+        ? `<li class="done">${STATUS.cancelled}<time>${thaiTime(o.history.at(-1).at)}</time></li>`
+        : FLOW.map((s) => {
+            const h = reached(s);
+            return `<li class="${h ? 'done' : ''}">${STATUS[s]}${h ? `<time>${thaiTime(h.at)}</time>` : ''}</li>`;
+          }).join('');
+
+      $('#app').innerHTML = `
+        <div class="card">
+          <p class="order-id">ออเดอร์ ${esc(o.id)}</p>
+          <h1>${esc(o.gameName)} · ${esc(o.packageName)}</h1>
+          <p>UID <b>${esc(o.playerId)}</b>${o.server ? ` · เซิร์ฟเวอร์ ${esc(o.server)}` : ''}</p>
+          <span class="badge ${esc(o.status)}">${STATUS[o.status]}</span>
+        </div>
+
+        ${o.status === 'pending_payment' ? `
+          <div class="card">
+            <h2>สแกนเพื่อชำระเงิน</h2>
+            <div class="pay">
+              <img src="${o.qr}" alt="QR PromptPay ยอด ${baht(o.amount)}">
+              <div>
+                <div class="amount">${baht(o.amount)}</div>
+                <p>ชื่อบัญชี: ${esc(o.promptPayName)}</p>
+                <p class="hint">เปิดแอปธนาคาร > สแกน QR > ตรวจยอดให้ตรง แล้วกดยืนยัน</p>
+              </div>
+            </div>
+            <label for="note">หมายเหตุถึงร้าน (ไม่บังคับ)</label>
+            <input id="note" placeholder="เช่น โอนจากบัญชีชื่อ… เวลา 18:30">
+            <p></p>
+            <button class="btn" id="notify">ฉันโอนเงินแล้ว</button>
+            <p class="error" id="err" role="alert"></p>
+          </div>` : ''}
+
+        <div class="card">
+          <h2>สถานะ</h2>
+          <ul class="timeline">${timeline}</ul>
+          <p class="hint">หน้านี้อัปเดตอัตโนมัติ เก็บลิงก์นี้ไว้เพื่อกลับมาดูสถานะ</p>
+        </div>`;
+
+      const btn = $('#notify');
+      if (btn) btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'กำลังแจ้งร้าน…';
+        try {
+          await api(`/api/orders/${encodeURIComponent(id)}/notify`, { method: 'POST', body: { t, note: $('#note').value } });
+          load();
+        } catch (e) {
+          $('#err').textContent = e.message;
+          btn.disabled = false;
+          btn.textContent = 'ฉันโอนเงินแล้ว';
+        }
+      });
+    }
+
+    let lastStatus;
+    async function load() {
+      try {
+        const o = await api(`/api/orders/${encodeURIComponent(id)}?t=${encodeURIComponent(t || '')}`);
+        // ไม่ render ใหม่ถ้าสถานะเดิม (กันช่องหมายเหตุที่กำลังพิมพ์หาย)
+        if (o.status !== lastStatus) { lastStatus = o.status; render(o); }
+        clearTimeout(timer);
+        if (!['completed', 'cancelled'].includes(o.status)) timer = setTimeout(load, 10000);
+      } catch (e) {
+        $('#app').innerHTML = `<div class="card"><p class="error">${esc(e.message)}</p><a href="/">กลับหน้าแรก</a></div>`;
+      }
+    }
+    load();
+  </script>
+</body>
+</html>

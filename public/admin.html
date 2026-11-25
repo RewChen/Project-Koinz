@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>หลังบ้าน — Koinz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500&family=Mitr:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="admin">
+  <header class="top">
+    <div class="wrap">
+      <a class="logo" href="/"><span class="coin coin-mini">K</span><span>หลังบ้าน <span data-shop>Koinz</span></span></a>
+      <nav><button class="btn ghost small" id="logout" hidden>ออกจากระบบ</button></nav>
+    </div>
+  </header>
+
+  <main class="wrap" id="app"></main>
+
+  <script src="/js/common.js"></script>
+  <script>
+    let token = sessionStorage.getItem('koinz_admin') || '';
+    const auth = () => ({ Authorization: 'Bearer ' + token });
+
+    function showLogin(msg = '') {
+      $('#logout').hidden = true;
+      $('#app').innerHTML = `
+        <form class="card" id="login" style="max-width:380px;margin:40px auto">
+          <h1>เข้าสู่ระบบหลังบ้าน</h1>
+          <label for="pw">รหัสผ่าน</label>
+          <input id="pw" type="password" autocomplete="current-password" required>
+          <p class="error" id="err" role="alert">${esc(msg)}</p>
+          <button class="btn">เข้าสู่ระบบ</button>
+        </form>`;
+      $('#pw').focus();
+      $('#login').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        try {
+          ({ token } = await api('/api/admin/login', { method: 'POST', body: { password: $('#pw').value } }));
+          sessionStorage.setItem('koinz_admin', token);
+          showDashboard();
+        } catch (ex) { $('#err').textContent = ex.message; }
+      });
+    }
+
+    async function guarded(fn) {
+      try { return await fn(); }
+      catch (e) {
+        if (/เข้าสู่ระบบ/.test(e.message)) { sessionStorage.removeItem('koinz_admin'); showLogin(e.message); }
+        else alert(e.message);
+      }
+    }
+
+    function showDashboard() {
+      $('#logout').hidden = false;
+      $('#app').innerHTML = `
+        <div class="tabs" role="tablist">
+          <button class="btn ghost small" role="tab" aria-selected="true" data-tab="orders">ออเดอร์</button>
+          <button class="btn ghost small" role="tab" aria-selected="false" data-tab="games">เกมและราคา</button>
+        </div>
+        <section id="tab"></section>`;
+      document.querySelectorAll('[data-tab]').forEach((b) =>
+        b.addEventListener('click', () => {
+          document.querySelectorAll('[data-tab]').forEach((x) => x.setAttribute('aria-selected', x === b));
+          b.dataset.tab === 'orders' ? showOrders() : showGames();
+        })
+      );
+      showOrders();
+    }
+
+    async function showOrders() {
+      $('#tab').innerHTML = `
+        <div class="toolbar">
+          <select id="filter">
+            <option value="">ทุกสถานะ</option>
+            ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
+          </select>
+          <button class="btn ghost small" id="refresh">รีเฟรช</button>
+          <span class="hint" id="count"></span>
+        </div>
+        <div class="table-scroll card"><table>
+          <thead><tr><th>ออเดอร์</th><th>เกม / แพ็กเกจ</th><th>UID</th><th>ติดต่อ</th><th>ยอด</th><th>หมายเหตุ</th><th>สถานะ</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table></div>`;
+      $('#filter').value = sessionStorage.getItem('koinz_filter') || 'paid_pending_review';
+      $('#filter').addEventListener('change', () => { sessionStorage.setItem('koinz_filter', $('#filter').value); loadOrders(); });
+      $('#refresh').addEventListener('click', loadOrders);
+      loadOrders();
+    }
+
+    async function loadOrders() {
+      await guarded(async () => {
+        const all = await api('/api/admin/orders', { headers: auth() });
+        const f = $('#filter').value;
+        const list = f ? all.filter((o) => o.status === f) : all;
+        $('#count').textContent = `${list.length} รายการ`;
+        $('#rows').innerHTML = list.length ? list.map((o) => `
+          <tr>
+            <td>${esc(o.id)}<br><span class="hint">${thaiTime(o.createdAt)}</span></td>
+            <td>${esc(o.gameName)}<br>${esc(o.packageName)}</td>
+            <td><b>${esc(o.playerId)}</b>${o.server ? `<br>${esc(o.server)}` : ''}</td>
+            <td>${esc(o.contact)}</td>
+            <td>${baht(o.amount)}</td>
+            <td>${esc(o.customerNote || '')}</td>
+            <td><select data-id="${esc(o.id)}" aria-label="สถานะของ ${esc(o.id)}">
+              ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${k === o.status ? 'selected' : ''}>${v}</option>`).join('')}
+            </select></td>
+          </tr>`).join('') : `<tr><td colspan="7" class="empty">ไม่มีออเดอร์ในสถานะนี้</td></tr>`;
+        document.querySelectorAll('#rows select').forEach((s) =>
+          s.addEventListener('change', () => guarded(async () => {
+            await api(`/api/admin/orders/${encodeURIComponent(s.dataset.id)}/status`, { method: 'POST', headers: auth(), body: { status: s.value } });
+            loadOrders();
+          }))
+        );
+      });
+    }
+
+    async function showGames() {
+      $('#tab').innerHTML = `
+        <div class="card">
+          <h2>เกมและราคา</h2>
+          <p class="hint">แก้ไขชื่อเกม แพ็กเกจ และราคาในรูปแบบ JSON แล้วกดบันทึก · ใส่ "active": false เพื่อซ่อนเกม</p>
+          <textarea id="json" spellcheck="false"></textarea>
+          <p class="error" id="gerr" role="alert"></p>
+          <button class="btn small" id="save">บันทึกเกมและราคา</button>
+        </div>`;
+      await guarded(async () => {
+        $('#json').value = JSON.stringify(await api('/api/admin/games', { headers: auth() }), null, 2);
+      });
+      $('#save').addEventListener('click', () => guarded(async () => {
+        $('#gerr').textContent = '';
+        let data;
+        try { data = JSON.parse($('#json').value); } catch { return ($('#gerr').textContent = 'รูปแบบ JSON ไม่ถูกต้อง ตรวจเครื่องหมายจุลภาคและวงเล็บ'); }
+        try {
+          await api('/api/admin/games', { method: 'PUT', headers: auth(), body: data });
+          $('#gerr').style.color = 'var(--mint)';
+          $('#gerr').textContent = 'บันทึกเกมและราคาแล้ว';
+        } catch (e) { $('#gerr').style.color = ''; $('#gerr').textContent = e.message; }
+      }));
+    }
+
+    $('#logout').addEventListener('click', () => { sessionStorage.removeItem('koinz_admin'); token = ''; showLogin(); });
+    token ? showDashboard() : showLogin();
+  </script>
+</body>
+</html>
