@@ -91,13 +91,15 @@ koinz/
 │   └── audit.json         # ประวัติการเปลี่ยนแปลง 5,000 รายการล่าสุด (สร้างอัตโนมัติ)
 ├── docs/games.v2.json     # แคตตาล็อกตัวอย่าง 6 เกม
 ├── public/                # Frontend (ขึ้น GitHub Pages ได้ ทุก path เป็นแบบ relative)
-│   ├── index.html         # หน้าแรก / เลือกเกม / ออเดอร์ของฉัน
-│   ├── game.html          # หน้าเติมเกม (ฟอร์มสร้างจาก fields)
-│   ├── order.html         # ชำระเงิน + ติดตามสถานะ real-time
+│   ├── index.html         # หน้าแรก + เติมเกม (?game=<slug>): ชิปเกม, กองเหรียญ, แพ็กเกจ, ช่องผู้เล่นจาก fields, ออเดอร์ของฉัน
+│   ├── game.html          # redirect เก่า: game.html?slug=x → ./?game=x
+│   ├── order.html         # สแกนจ่าย / QR หมดอายุ / สถานะ (SSE) / เติมไม่สำเร็จ-คืนเงิน
 │   ├── admin.html         # หลังบ้าน (ไม่ขึ้น Pages)
-│   ├── css/style.css
-│   └── js/config.js       # URL ของ API (ค่าว่าง = โดเมนเดียวกัน)
-│       js/common.js
+│   ├── css/style.css      # design tokens (:root) + ทุก component · breakpoint เดียว 900px
+│   └── js/
+│       ├── config.js      # URL ของ API (ค่าว่าง = โดเมนเดียวกัน)
+│       ├── common.js      # api(), esc(), ไอคอน SVG, remember (จำ UID ต่อเกม), myOrders
+│       └── pile.js        # renderPile(): กองเหรียญ voxel แบบ SVG + animation ตอนเปลี่ยนแพ็กเกจ
 ├── db/
 │   ├── migrations/001_init.sql   # ตาราง games, packages, orders, order_history, audit, jobs
 │   ├── migrate.js         # รัน migration (แอปเรียกเองตอนเริ่ม)

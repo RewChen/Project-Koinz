@@ -22,7 +22,9 @@ src/jobs.js          คิวเติมเกม data/jobs.json + retry, ก�
 src/adapters.js      lookupNickname, fulfillTopup, sendAlert
 src/security.js      rate limit, security headers, CORS
 src/app.js           createApp(): ทุก route
-public/js/config.js  window.KOINZ_API (ค่าว่าง = โดเมนเดียวกัน) · common.js มี api(), apiUrl(), esc(), STATUS
+public/js/config.js  window.KOINZ_API (ค่าว่าง = โดเมนเดียวกัน) · common.js มี api(), apiUrl(), esc(), STATUS, ICON, remember, playerText()
+public/js/pile.js    renderPile(svg, level, label) + pileLevel(packages, id) — กองเหรียญ voxel
+public/index.html    หน้าแรก + เติมเกม (?game=<slug>) · game.html เป็นแค่ redirect · order.html มี 4 มุมมองตามสถานะ
 test/api.test.js     เทส end-to-end (spawn server.js + โฟลเดอร์ข้อมูลชั่วคราว + Express ปลอมสำหรับ supplier/lookup/alert)
 .github/workflows/deploy.yml   deploy public/ ขึ้น Pages (ไม่รวม admin.html)
 ```
@@ -42,11 +44,15 @@ test/api.test.js     เทส end-to-end (spawn server.js + โฟลเดอ�
 - แก้โค้ดแล้วรัน `npm test` ให้ผ่านก่อน commit — ถ้าแตะ `src/repo/` หรือ `db/` ต้องผ่าน `npm run test:pg` ด้วย
 - Git Bash บน Windows: คำสั่งที่มี path ใน container ให้ตั้ง `MSYS_NO_PATHCONV=1`
 - อย่า commit `.env`
-- ดีไซน์: กำลังย้ายไปโทนใหม่ "พื้นสว่าง + กองเหรียญ voxel" ตาม `DESIGN_SPEC.md` (ข้อมูลในไฟล์นั้นใช้แทนโทนครามเดิม) — ใช้ตัวแปรสีใน `public/css/style.css` ห้าม hardcode สีใหม่
+- ดีไซน์: "พื้นสว่าง + กองเหรียญ voxel" ตาม `DESIGN_SPEC.md` (mockup ด้านล่าง)
+  - สีทั้งหมดเป็นตัวแปรใน `:root` ของ `public/css/style.css` เท่านั้น — สีใหม่ให้เพิ่มเป็นตัวแปรก่อน และตัวหนังสือต้อง contrast ≥ 4.5:1
+  - ฟอนต์เดียว Anuphan · ไม่ใช้เงา ไม่ใช้ gradient · แดง (`--red`) ใช้กับ action หลัก 1 อย่างต่อจอและป้ายเล็กเท่านั้น
+  - ปุ่ม/ช่องกรอกเป็นแคปซูล สูง ≥ 44px · ไอคอนเป็น inline SVG ใน `ICON` (common.js) ห้ามใช้ emoji
+  - breakpoint เดียว 900px · animation เดียวคือกองเหรียญ (`pile.js`) และต้องปิดเมื่อ `prefers-reduced-motion`
 
 ## งานที่กำลังทำ (ทำตามลำดับนี้)
 1. ~~`UPGRADE_SPEC.md`~~ — เสร็จแล้ว (branch `feature/upgrade`)
-2. `DESIGN_SPEC.md` — เปลี่ยนหน้าเว็บเป็นดีไซน์ใหม่ (mockup: https://claude.ai/artifact/RTNnuM7nQQGNFjjWmFVtRi)
+2. ~~`DESIGN_SPEC.md`~~ — เสร็จแล้ว (mockup: https://claude.ai/artifact/RTNnuM7nQQGNFjjWmFVtRi)
 3. ~~`DOCKER_SETUP.md`~~ — เสร็จแล้ว (Docker Compose + PostgreSQL + nginx)
 
 ## การแบ่งงาน
