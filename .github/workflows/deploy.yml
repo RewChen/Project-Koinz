@@ -1,4 +1,4 @@
-# Deploy หน้าร้าน (public/) ขึ้น GitHub Pages ทุกครั้งที่ push main
+# Deploy หน้าร้าน (public/) ขึ้น GitHub Pages ทุกครั้งที่ push main (แบ่ง 2 job ตาม starter workflow ของ GitHub)
 # API รันแยกที่เซิร์ฟเวอร์ของร้าน → ตั้ง repository variable KOINZ_API_URL (Settings → Secrets and variables → Actions → Variables)
 # และตั้ง FRONTEND_ORIGIN ในฝั่ง API ให้เป็นโดเมนของ Pages (เช่น https://rewchen.github.io)
 name: Deploy frontend to GitHub Pages
@@ -18,17 +18,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
 
       - name: Build site from public/
         env:
@@ -41,15 +34,23 @@ jobs:
           if [ -z "$KOINZ_API_URL" ]; then
             echo "::warning::ยังไม่ได้ตั้ง repository variable KOINZ_API_URL หน้าร้านจะเรียก API ที่โดเมนเดียวกัน (ใช้งานบน Pages ไม่ได้)"
           fi
+          # runner มี Node ติดตั้งมาแล้ว ไม่ต้อง setup-node
           node -e "const u=(process.env.KOINZ_API_URL||'').trim().replace(/\/+\$/,''); require('fs').writeFileSync('_site/js/config.js', '// สร้างโดย GitHub Actions\nwindow.KOINZ_API = ' + JSON.stringify(u) + ';\n')"
           cat _site/js/config.js
-          touch _site/.nojekyll
 
       - uses: actions/configure-pages@v5
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
-      - id: deployment
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
