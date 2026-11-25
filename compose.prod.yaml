@@ -1,4 +1,5 @@
 # prod — docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+# เปิดออกนอกแค่ nginx (port 80) — app และ db คุยกันในเครือข่ายภายในเท่านั้น
 services:
   app:
     build:
@@ -6,5 +7,19 @@ services:
     image: koinz-app:prod
     environment:
       NODE_ENV: production # บังคับ — กันบรรทัด NODE_ENV= ว่างใน .env ทับค่าใน image
+      # อยู่หลัง nginx 1 ชั้น → rate limit เห็น IP จริงของลูกค้า (มี proxy/CDN ด้านหน้าอีกชั้น ตั้ง TRUST_PROXY=2 ใน .env)
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+    expose:
+      - "3000"
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx.Dockerfile
+    image: koinz-nginx:prod
+    depends_on:
+      app:
+        condition: service_healthy
     ports:
-      - "3000:3000"
+      - "80:80"
+    restart: unless-stopped

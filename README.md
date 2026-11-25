@@ -27,9 +27,45 @@
 
 | คำสั่ง | ใช้ทำอะไร |
 |---|---|
-| `npm start` | รันเซิร์ฟเวอร์ |
+| `npm start` | รันเซิร์ฟเวอร์ (เก็บข้อมูลเป็นไฟล์ JSON ใน `data/`) |
 | `npm run dev` | รันแบบรีสตาร์ทเองเมื่อแก้โค้ด |
-| `npm test` | รันเทส API ทั้งหมด (`node:test` ไม่ต้องติดตั้งเพิ่ม) |
+| `npm test` | รันเทส API ทั้งหมดกับไฟล์ JSON (`node:test` ไม่ต้องติดตั้งเพิ่ม) |
+| `npm run test:pg` | รันเทสชุดเดียวกันกับ PostgreSQL ใน Docker |
+| `npm run db:migrate` / `npm run db:import` | migrate ฐานข้อมูล / ย้ายข้อมูลจาก `data/*.json` เข้า PostgreSQL |
+
+## รันด้วย Docker (แนะนำสำหรับใช้งานจริง)
+
+ทุกอย่างอยู่ใน container — เครื่องมีแค่ [Docker Desktop](https://www.docker.com/products/docker-desktop/) ก็พอ ไม่ต้องลง Node หรือ PostgreSQL
+
+```
+copy .env.example .env      # แล้วตั้ง ADMIN_PASSWORD และ POSTGRES_PASSWORD (A-Z a-z 0-9 - _ เท่านั้น)
+```
+
+| โหมด | คำสั่ง | เปิดที่ |
+|---|---|---|
+| dev (แก้โค้ดแล้วเห็นผลทันที) | `docker compose up --build` | เว็บ http://localhost:3000 · Adminer http://localhost:8080 · PostgreSQL `localhost:5432` |
+| prod (nginx + image เล็ก ไม่ใช่ root) | `docker compose -f compose.yaml -f compose.prod.yaml up -d --build` | http://localhost (เปิดออกนอกแค่ port 80) |
+
+```
+┌─ prod ────────────────────────────────────────────────────────────┐
+│ browser ─80─▶ nginx (gzip, cache css/js, SSE) ─▶ app:3000 ─▶ db:5432 │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+- เริ่มครั้งแรก แอปจะ migrate ฐานข้อมูลและใส่เกมตั้งต้น 6 เกมให้เอง ข้อมูลอยู่ใน volume `koinz-pg` (ลบ container แล้วข้อมูลยังอยู่)
+- prod บังคับ `NODE_ENV=production` (รหัสผ่านแอดมินอ่อน → ไม่ยอมเริ่ม) และ `TRUST_PROXY=1` (rate limit เห็น IP จริงหลัง nginx)
+- มีข้อมูลเก่าเป็นไฟล์ JSON? วางไว้ใน `data/` แล้วรัน `docker compose run --rm app node db/import-json.js` (รันซ้ำได้ ไม่ซ้ำ)
+
+| คำสั่งที่ใช้บ่อย | |
+|---|---|
+| `docker compose logs -f app` | ดู log |
+| `docker compose exec db psql -U koinz` | เข้า PostgreSQL |
+| `sh docker/backup.sh` | สำรองฐานข้อมูล → `backups/koinz-วันที่.sql` |
+| `sh docker/restore.sh backups/ไฟล์.sql` | กู้ฐานข้อมูล (เขียนทับทั้งหมด หยุดแอปชั่วคราวให้เอง) |
+| `docker compose down` | หยุด (ข้อมูลยังอยู่) |
+| `docker compose down -v` | หยุด + **ลบข้อมูลทั้งหมด** ⚠️ |
+
+> ใช้ Git Bash บน Windows: ถ้าคำสั่งมี path ใน container (เช่น `/app/data`) ให้ตั้ง `MSYS_NO_PATHCONV=1` ก่อน ไม่งั้น Git Bash จะแปลง path เป็นแบบ Windows
 
 ## โครงสร้างโปรเจกต์
 
@@ -39,7 +75,8 @@ koinz/
 ├── src/
 │   ├── env.js             # โหลด .env
 │   ├── config.js          # อ่านตัวแปร env ทั้งหมดที่เดียว
-│   ├── store.js           # ฐานข้อมูลไฟล์ JSON (cache + เช็ค mtime, เขียนแบบ atomic)
+│   ├── repo/              # ที่เก็บข้อมูล: index.js เลือก pg.js (มี DATABASE_URL) หรือ json.js
+│   ├── store.js           # อ่าน/เขียนไฟล์ JSON (cache + เช็ค mtime, เขียนแบบ atomic) ให้ repo/json.js
 │   ├── catalog.js         # เกม/แพ็กเกจ, ตรวจข้อมูลผู้เล่นตาม fields, ตรวจแคตตาล็อกก่อนบันทึก
 │   ├── orders.js          # สถานะออเดอร์, transition(), audit log, event bus
 │   ├── jobs.js            # คิวเติมเกม + retry, กวาดออเดอร์หมดอายุ
@@ -61,7 +98,20 @@ koinz/
 │   ├── css/style.css
 │   └── js/config.js       # URL ของ API (ค่าว่าง = โดเมนเดียวกัน)
 │       js/common.js
-├── test/api.test.js       # เทส end-to-end
+├── db/
+│   ├── migrations/001_init.sql   # ตาราง games, packages, orders, order_history, audit, jobs
+│   ├── migrate.js         # รัน migration (แอปเรียกเองตอนเริ่ม)
+│   └── import-json.js     # ย้าย data/*.json → PostgreSQL
+├── docker/
+│   ├── entrypoint.sh      # seed games.json ครั้งแรก (โหมดไฟล์ JSON)
+│   ├── dev-watch.js       # รีสตาร์ทเมื่อแก้โค้ด (bind mount จาก Windows ไม่ส่ง event ไฟล์)
+│   ├── nginx.conf / nginx.Dockerfile
+│   ├── backup.sh / restore.sh
+├── Dockerfile             # multi-stage: dev / prod
+├── compose.yaml           # app + db (ใช้ร่วม)
+├── compose.override.yaml  # dev: bind mount, port 3000/5432, Adminer
+├── compose.prod.yaml      # prod: nginx port 80, NODE_ENV=production, TRUST_PROXY=1
+├── test/api.test.js       # เทส end-to-end (ไฟล์ JSON หรือ PostgreSQL)
 └── .github/workflows/deploy.yml   # deploy หน้าร้านขึ้น GitHub Pages
 ```
 
@@ -250,7 +300,7 @@ Idempotency-Key: {orderId}
 3. **push `main`** → workflow `.github/workflows/deploy.yml` จะ copy `public/` เขียน `js/config.js` ใหม่ให้ชี้ไปที่ API แล้ว deploy (ไม่รวม `admin.html`)
 4. แอดมินเข้าหลังบ้านผ่านโดเมนของ API: `https://api.ร้านของคุณ.com/admin.html`
 
-ถ้าไม่ใช้ Pages ก็รันทั้งหมดบนเซิร์ฟเวอร์เดียวได้ตามปกติ (`js/config.js` ค่าว่าง = API อยู่โดเมนเดียวกัน) ดูแผน Docker ใน `DOCKER_SETUP.md`
+ถ้าไม่ใช้ Pages ก็รันทั้งหมดบนเซิร์ฟเวอร์เดียวได้ตามปกติ (`js/config.js` ค่าว่าง = API อยู่โดเมนเดียวกัน) — วิธีที่ง่ายที่สุดคือ Docker โหมด prod ด้านบน แล้วทำ HTTPS ด้านหน้า (เช่น Cloudflare หรือ Caddy) ถ้ามี proxy เพิ่มอีกชั้นให้เพิ่ม `TRUST_PROXY` ตามจำนวนชั้น
 
 ## หมายเหตุสำคัญ
 
@@ -263,7 +313,7 @@ Idempotency-Key: {orderId}
 - [ ] ระบบสมาชิก + กระเป๋าเงิน (เติมเครดิตเก็บไว้)
 - [ ] ลูกค้าอัปโหลดสลิป + ตรวจสลิปอัตโนมัติ (ส่งผลเข้า webhook ชำระเงินที่มีอยู่)
 - [ ] เชื่อม payment gateway จริง (เช่น Omise / 2C2P / GB Prime Pay) เข้ากับ `/api/webhooks/payment`
-- [ ] ย้ายฐานข้อมูลไป PostgreSQL (`DOCKER_SETUP.md`)
+- [x] ย้ายฐานข้อมูลไป PostgreSQL + Docker Compose + nginx (`DOCKER_SETUP.md`)
 - [ ] แจ้งเตือนผ่าน LINE Notify / LINE OA
 - [x] เชื่อม API ผู้ให้บริการเติมเกม เพื่อเติมอัตโนมัติ
 - [x] Webhook ยืนยันการชำระเงินแบบ HMAC

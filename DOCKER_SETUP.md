@@ -2,6 +2,8 @@
 
 > ไฟล์นี้เป็น **คำสั่งงานสำหรับ Claude Code** — เปิด Claude Code ในโฟลเดอร์ `D:\koinz` แล้วพิมพ์:
 > `อ่าน DOCKER_SETUP.md แล้วทำตามทีละ Phase รัน acceptance check ทุกข้อก่อนไป Phase ถัดไป`
+>
+> **สถานะ: ทำครบทั้ง 3 Phase แล้ว** (acceptance ผ่านทุกข้อ) — วิธีใช้งานดูหัวข้อ "รันด้วย Docker" ใน README.md
 
 ## บริบทโปรเจกต์ (สถานะปัจจุบัน)
 
@@ -59,10 +61,10 @@
 5. **`compose.prod.yaml`** — `build.target: prod`, ไม่ bind mount source
 
 ✅ Acceptance check Phase 1
-- [ ] `docker compose up --build` → เปิด http://localhost:3000 เห็นรายชื่อเกม 6 เกม
-- [ ] แก้ข้อความใน `public/index.html` แล้วรีเฟรชเห็นผลทันที (dev)
-- [ ] สร้างออเดอร์ → `docker compose down` → `up` อีกครั้ง → ออเดอร์ยังอยู่ (volume ทำงาน)
-- [ ] `docker compose -f compose.yaml -f compose.prod.yaml up --build` ทำงาน และ `docker compose ps` แสดง `healthy`
+- [x] `docker compose up --build` → เปิด http://localhost:3000 เห็นรายชื่อเกม 6 เกม
+- [x] แก้ข้อความใน `public/index.html` แล้วรีเฟรชเห็นผลทันที (dev)
+- [x] สร้างออเดอร์ → `docker compose down` → `up` อีกครั้ง → ออเดอร์ยังอยู่ (volume ทำงาน)
+- [x] `docker compose -f compose.yaml -f compose.prod.yaml up --build` ทำงาน และ `docker compose ps` แสดง `healthy`
 
 ## Phase 2 — เพิ่ม PostgreSQL แทนไฟล์ JSON
 
@@ -102,13 +104,13 @@
 10. เพิ่มตัวแปรใน `.env.example` + ตาราง "ตัวแปร .env" ใน README (มีเทสเช็คว่าครบ): `DATABASE_URL=postgres://koinz:${POSTGRES_PASSWORD}@db:5432/koinz`, `POSTGRES_PASSWORD=`
 
 ✅ Acceptance check Phase 2
-- [ ] `docker compose down -v && docker compose up --build` → ระบบ migrate + seed เองแล้วเปิดเว็บได้ เห็น 6 เกม
-- [ ] สร้างออเดอร์ → แจ้งโอน → แอดมินกด "ยืนยันยอดเข้าแล้ว" → "เติมสำเร็จ" ได้ครบ flow และ audit แสดงครบ
-- [ ] ยิง `POST /api/orders` ด้วย idempotencyKey เดิมพร้อมกัน 2 ครั้ง → ใน `orders` มีแถวเดียว
-- [ ] รีสตาร์ท container ระหว่างงานเติมกำลัง retry → งานทำต่อจนจบ
-- [ ] `db/import-json.js` ย้ายข้อมูลจาก `data/*.json` แล้วจำนวนออเดอร์/audit ตรงกัน
-- [ ] เห็นข้อมูลใน Adminer ที่ http://localhost:8080
-- [ ] แก้ราคาในหลังบ้าน (แท็บ "เกมและราคา") แล้วหน้าร้านแสดงราคาใหม่
+- [x] `docker compose down -v && docker compose up --build` → ระบบ migrate + seed เองแล้วเปิดเว็บได้ เห็น 6 เกม
+- [x] สร้างออเดอร์ → แจ้งโอน → แอดมินกด "ยืนยันยอดเข้าแล้ว" → "เติมสำเร็จ" ได้ครบ flow และ audit แสดงครบ
+- [x] ยิง `POST /api/orders` ด้วย idempotencyKey เดิมพร้อมกัน 2 ครั้ง → ใน `orders` มีแถวเดียว
+- [x] รีสตาร์ท container ระหว่างงานเติมกำลัง retry → งานทำต่อจนจบ
+- [x] `db/import-json.js` ย้ายข้อมูลจาก `data/*.json` แล้วจำนวนออเดอร์/audit ตรงกัน
+- [x] เห็นข้อมูลใน Adminer ที่ http://localhost:8080
+- [x] แก้ราคาในหลังบ้าน (แท็บ "เกมและราคา") แล้วหน้าร้านแสดงราคาใหม่
 
 ## Phase 3 — Production hardening
 
@@ -123,11 +125,11 @@
 5. สคริปต์ backup: `docker/backup.sh` ใช้ `pg_dump` เก็บไฟล์ใน `./backups/` ตั้งชื่อตามวันที่
 
 ✅ Acceptance check Phase 3
-- [ ] `docker compose -f compose.yaml -f compose.prod.yaml up -d --build` → http://localhost เปิดได้ผ่าน nginx
-- [ ] `curl -I http://localhost/css/style.css` เห็น `Cache-Control` และ `Content-Encoding: gzip`
-- [ ] ลอง login ผิด 6 ครั้งติด → ได้ 429 (และ IP คนอื่นยัง login ได้ = `TRUST_PROXY` ทำงาน)
-- [ ] เปิดหน้าออเดอร์ผ่าน http://localhost แล้วแอดมินเปลี่ยนสถานะ → หน้าเปลี่ยนภายใน 1 วินาที (SSE ผ่าน nginx ไม่ติด buffer)
-- [ ] backup สร้างไฟล์ `.sql` ได้ และ restore กลับได้
+- [x] `docker compose -f compose.yaml -f compose.prod.yaml up -d --build` → http://localhost เปิดได้ผ่าน nginx
+- [x] `curl -I http://localhost/css/style.css` เห็น `Cache-Control` และ `Content-Encoding: gzip`
+- [x] ลอง login ผิด 6 ครั้งติด → ได้ 429 (และ IP คนอื่นยัง login ได้ = `TRUST_PROXY` ทำงาน)
+- [x] เปิดหน้าออเดอร์ผ่าน http://localhost แล้วแอดมินเปลี่ยนสถานะ → หน้าเปลี่ยนภายใน 1 วินาที (SSE ผ่าน nginx ไม่ติด buffer)
+- [x] backup สร้างไฟล์ `.sql` ได้ และ restore กลับได้
 
 ## ไฟล์ที่ต้องได้เมื่อเสร็จ
 
@@ -140,7 +142,10 @@ koinz/
 ├── compose.prod.yaml
 ├── docker/
 │   ├── entrypoint.sh
+│   ├── dev-watch.js
 │   ├── nginx.conf
+│   ├── nginx.Dockerfile
+│   ├── restore.sh
 │   └── backup.sh
 └── db/
     ├── migrate.js

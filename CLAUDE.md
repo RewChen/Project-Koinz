@@ -5,13 +5,17 @@
 ## Stack
 - Backend: Node.js 22 + Express 4 — ไม่ติดตั้งแพ็กเกจเพิ่มนอกจาก `express`, `qrcode` (ใช้ `fetch`, `crypto`, `events`, `node:test` ในตัว)
 - Frontend: HTML/CSS/JS ล้วน (`public/`) ไม่มี build step, ทุก path เป็นแบบ relative (ขึ้น GitHub Pages ได้)
-- Data: ไฟล์ JSON ใน `data/` หรือ `KOINZ_DATA_DIR` (แผนย้ายไป PostgreSQL ดู `DOCKER_SETUP.md`)
+- Data: ตั้ง `DATABASE_URL` → PostgreSQL (`pg`, ไม่มี ORM) / ไม่ตั้ง → ไฟล์ JSON ใน `data/` หรือ `KOINZ_DATA_DIR` — ทั้งสองแบบใช้ interface เดียวกันใน `src/repo/`
+- Docker: `docker compose up --build` (dev: app + PostgreSQL + Adminer) / `-f compose.yaml -f compose.prod.yaml` (prod: + nginx)
 
 ## โครงสร้าง
 ```
 server.js            เช็คค่าตั้งค่า → listen → jobs.start()
 src/config.js        อ่าน env ทั้งหมดที่เดียว (ตัวแปรใหม่ต้องเพิ่มใน .env.example + README ด้วย — มีเทสเช็ค)
-src/store.js         read/write/update ไฟล์ JSON (cache + mtime, atomic write)
+src/repo/            ชั้นข้อมูล async: index.js เลือก pg.js หรือ json.js (ฟังก์ชันชุดเดียวกัน — แก้ที่หนึ่งต้องแก้อีกที่ด้วย)
+src/store.js         read/write/update ไฟล์ JSON (cache + mtime, atomic write) ใช้โดย repo/json.js
+db/                  migrations/*.sql (เพิ่มไฟล์ใหม่ อย่าแก้ไฟล์เก่า), migrate.js, import-json.js
+docker/              entrypoint.sh, dev-watch.js, nginx.conf, backup.sh, restore.sh
 src/catalog.js       เกม/แพ็กเกจ, publicGame() ตัด sku/cost, validateInputs(), validateGames()
 src/orders.js        สถานะ + ALLOWED, transition() = จุดเดียวที่เปลี่ยนสถานะ (history + audit + bus.emit)
 src/jobs.js          คิวเติมเกม data/jobs.json + retry, กวาดออเดอร์หมดอายุทุก 2 วิ
@@ -24,7 +28,7 @@ test/api.test.js     เทส end-to-end (spawn server.js + โฟลเดอ�
 ```
 
 ## คำสั่ง
-- `npm install` / `npm start` / `npm run dev` / `npm test`
+- `npm install` / `npm start` / `npm run dev` / `npm test` (ไฟล์ JSON) / `npm run test:pg` (PostgreSQL ใน Docker)
 - เว็บ: http://localhost:3000 · หลังบ้าน: http://localhost:3000/admin.html
 
 ## กติกา
@@ -35,14 +39,15 @@ test/api.test.js     เทส end-to-end (spawn server.js + โฟลเดอ�
 - เปลี่ยนสถานะออเดอร์ผ่าน `orders.transition()` เท่านั้น ห้ามแก้ `status` ตรง ๆ
 - ห้ามตั้งออเดอร์เป็น `completed` ถ้า supplier ยังไม่ยืนยัน และห้ามโชว์ชื่อในเกมปลอมให้ลูกค้าจริง
 - path ใน `public/` ต้องเป็น relative, เรียก API ผ่าน `api()` / `apiUrl()` เท่านั้น
-- แก้โค้ดแล้วรัน `npm test` ให้ผ่านก่อน commit
+- แก้โค้ดแล้วรัน `npm test` ให้ผ่านก่อน commit — ถ้าแตะ `src/repo/` หรือ `db/` ต้องผ่าน `npm run test:pg` ด้วย
+- Git Bash บน Windows: คำสั่งที่มี path ใน container ให้ตั้ง `MSYS_NO_PATHCONV=1`
 - อย่า commit `.env`
 - ดีไซน์: กำลังย้ายไปโทนใหม่ "พื้นสว่าง + กองเหรียญ voxel" ตาม `DESIGN_SPEC.md` (ข้อมูลในไฟล์นั้นใช้แทนโทนครามเดิม) — ใช้ตัวแปรสีใน `public/css/style.css` ห้าม hardcode สีใหม่
 
 ## งานที่กำลังทำ (ทำตามลำดับนี้)
 1. ~~`UPGRADE_SPEC.md`~~ — เสร็จแล้ว (branch `feature/upgrade`)
 2. `DESIGN_SPEC.md` — เปลี่ยนหน้าเว็บเป็นดีไซน์ใหม่ (mockup: https://claude.ai/artifact/RTNnuM7nQQGNFjjWmFVtRi)
-3. `DOCKER_SETUP.md` — Docker Compose + PostgreSQL + nginx
+3. ~~`DOCKER_SETUP.md`~~ — เสร็จแล้ว (Docker Compose + PostgreSQL + nginx)
 
 ## การแบ่งงาน
 - โค้ดทั้งหมด: Claude Code ทำตามไฟล์สเปก
