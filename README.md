@@ -284,6 +284,24 @@ Idempotency-Key: {orderId}
 
 แก้ได้ทั้งในหลังบ้าน (แท็บ "เกมและราคา") หรือแก้ไฟล์ตรง ๆ ระหว่างเซิร์ฟเวอร์รัน (ระบบเช็ค mtime) — กติกา: slug `a-z0-9-` 2–40 ตัวไม่ซ้ำ, ต้องมี fields และ packages อย่างน้อย 1, id แพ็กเกจห้ามซ้ำทั้งร้าน, ราคา > 0 ทศนิยมไม่เกิน 2 ตำแหน่ง
 
+## Deploy บน Railway (แนะนำ: ทั้งเว็บอยู่โดเมนเดียว)
+
+Railway build จาก `Dockerfile` ตาม `railway.json` (ได้ stage `prod` ซึ่งเป็น stage สุดท้าย) และรันหน้าร้าน + API + หลังบ้านใน service เดียว — ไม่ต้องตั้ง CORS และไม่ต้องใช้ GitHub Pages
+
+1. **สร้าง project:** https://railway.com → New Project → Deploy from GitHub repo → เลือก `RewChen/Project-Koinz` (branch `main`)
+2. **เพิ่มฐานข้อมูล:** ใน project กด **+ New → Database → PostgreSQL** ให้ชื่อ service เป็น `Postgres` (ตรงกับ `${{Postgres.DATABASE_URL}}` ในข้อถัดไป ถ้าตั้งชื่ออื่นให้แก้ตาม)
+3. **ตั้งตัวแปร:** service ของแอป → **Variables → Raw Editor** → วางเนื้อหาจาก [`docs/railway.env.example`](docs/railway.env.example) แล้วแก้ค่าที่มี `<...>` (อย่างน้อย `ADMIN_PASSWORD`, `PROMPTPAY_ID`, `PROMPTPAY_NAME`) — ไม่ต้องตั้ง `PORT` Railway ใส่ให้เอง
+4. **ทำโดเมน:** service ของแอป → **Settings → Networking → Generate Domain** (หรือ Custom Domain แล้วตั้ง CNAME ที่ผู้ให้บริการโดเมน) — HTTPS ได้อัตโนมัติ
+5. **ตรวจ:** แท็บ Deployments → Deploy Logs ต้องเห็น `migrate: 001_init.sql ✓`, `seed: ใส่เกมตั้งต้น 6 เกม` และ `ข้อมูล: PostgreSQL` แล้วเปิด `https://<โดเมน>/` และ `https://<โดเมน>/admin.html`
+
+หลังจากนี้ push `main` ทีไร Railway deploy ใหม่ให้เอง (เฉพาะเมื่อไฟล์ใน `watchPatterns` เปลี่ยน) ระหว่าง deploy จะรอ healthcheck `/api/config` ผ่านก่อนสลับไปใช้ตัวใหม่
+
+ข้อควรรู้:
+- **ใช้ 1 instance** (`numReplicas: 1`) และห้ามเปิด Serverless/sleep — session แอดมินกับ rate limit อยู่ในหน่วยความจำ และตัวกวาดออเดอร์หมดอายุ/คิวเติมเกมต้องรันตลอด
+- **webhook ชำระเงิน** ให้ผู้ให้บริการยิงมาที่ `https://<โดเมน>/api/webhooks/payment`
+- **backup:** เปิด Backups ใน service Postgres ของ Railway หรือสำรองเองด้วย `pg_dump "$DATABASE_PUBLIC_URL" > koinz.sql` (เปิด TCP Proxy ของ Postgres เพื่อให้มี `DATABASE_PUBLIC_URL`)
+- **GitHub Pages:** ถ้าใช้ Railway เป็นหน้าร้านแล้ว ปิด Pages ได้ (Settings → Pages) หรือถ้าจะใช้ต่อ ให้ตั้ง repository variable `KOINZ_API_URL=https://<โดเมน Railway>` และตั้ง `FRONTEND_ORIGIN=https://rewchen.github.io` ใน Railway
+
 ## Deploy: หน้าร้านบน GitHub Pages + API แยก
 
 หน้าร้าน (`public/`) เป็นไฟล์ static ทุก path เป็นแบบ relative จึงรันใต้ `https://<user>.github.io/Project-Koinz/` ได้ ส่วน API ต้องรันบนเซิร์ฟเวอร์ที่มี Node (VPS, Railway, Render ฯลฯ)

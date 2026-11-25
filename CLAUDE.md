@@ -27,6 +27,7 @@ public/js/pile.js    renderPile(svg, level, label) + pileLevel(packages, id) —
 public/index.html    หน้าแรก + เติมเกม (?game=<slug>) · game.html เป็นแค่ redirect · order.html มี 4 มุมมองตามสถานะ
 test/api.test.js     เทส end-to-end (spawn server.js + โฟลเดอร์ข้อมูลชั่วคราว + Express ปลอมสำหรับ supplier/lookup/alert)
 .github/workflows/deploy.yml   deploy public/ ขึ้น Pages (ไม่รวม admin.html)
+railway.json         deploy จริงบน Railway (Dockerfile stage prod, healthcheck /api/config, 1 instance) · ตัวแปรอยู่ใน docs/railway.env.example
 ```
 
 ## คำสั่ง
