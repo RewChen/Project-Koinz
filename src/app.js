@@ -4,7 +4,6 @@ const path = require('path');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const config = require('./config');
-const store = require('./store');
 const catalog = require('./catalog');
 const orders = require('./orders');
 const adapters = require('./adapters');
@@ -15,11 +14,10 @@ const { promptPayPayload } = require('./promptpay');
 const fail = (res, code, error) => res.status(code).json({ error });
 const baht = (n) => '฿' + Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 });
 const satang = (n) => Math.round(Number(n) * 100);
-// วันที่ตามเวลาไทย (UTC+7 ไม่มี daylight saving) รูปแบบ YYYY-MM-DD
-const thaiDate = (ms) => new Date(ms + 7 * 3600000).toISOString().slice(0, 10);
 const orderLine = (o) => `${o.id} · ${o.gameName} ${o.packageName} · ${o.playerLabel || o.playerId || ''} · ${baht(o.amount)}`;
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const text = (v, max) => String(v ?? '').trim().slice(0, max);
+const isUniqueViolation = (e) => e && e.code === '23505'; // PostgreSQL unique_violation
 
 function safeEqual(a, b) {
   const ha = crypto.createHash('sha256').update(String(a)).digest();
@@ -55,19 +53,19 @@ function createApp() {
     });
   });
 
-  app.get('/api/games', (req, res) => {
-    res.json(catalog.getGames().filter((g) => g.active !== false).map(catalog.publicSummary));
-  });
+  app.get('/api/games', wrap(async (req, res) => {
+    res.json((await catalog.getGames()).filter((g) => g.active !== false).map(catalog.publicSummary));
+  }));
 
-  app.get('/api/games/:slug', (req, res) => {
-    const game = catalog.findGame(req.params.slug);
+  app.get('/api/games/:slug', wrap(async (req, res) => {
+    const game = await catalog.findGame(req.params.slug);
     if (!game) return fail(res, 404, 'ไม่พบเกมนี้');
     res.json(catalog.publicGame(game));
-  });
+  }));
 
   app.post('/api/player/lookup', security.limits.lookup, wrap(async (req, res) => {
     const { gameSlug, playerInputs } = req.body || {};
-    const game = catalog.findGame(gameSlug);
+    const game = await catalog.findGame(gameSlug);
     if (!game) return fail(res, 400, 'ไม่พบเกมที่เลือก');
     const { inputs, error } = catalog.validateInputs(game, playerInputs);
     if (error) return fail(res, 400, error);
@@ -87,13 +85,10 @@ function createApp() {
     if (hasKey && (typeof key !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(key))) {
       return fail(res, 400, 'รหัสคำสั่งซื้อ (idempotencyKey) ไม่ถูกต้อง');
     }
-    const replay = () => {
-      const o = hasKey && orders.findByIdempotencyKey(key);
-      return o ? res.status(200).json({ id: o.id, token: o.token }) : null;
-    };
-    if (replay()) return;
+    const existing = hasKey && (await orders.findByIdempotencyKey(key));
+    if (existing) return res.status(200).json({ id: existing.id, token: existing.token });
 
-    const game = catalog.findGame(body.gameSlug);
+    const game = await catalog.findGame(body.gameSlug);
     if (!game) return fail(res, 400, 'ไม่พบเกมที่เลือก');
     const pkg = catalog.findPackage(game, body.packageId);
     if (!pkg) return fail(res, 400, 'กรุณาเลือกแพ็กเกจ');
@@ -107,10 +102,9 @@ function createApp() {
         playerNickname = (await adapters.lookupNickname(game, inputs)).nickname;
       } catch { /* ไม่เป็นไร */ }
     }
-    // ระหว่างรอตรวจชื่อ อาจมีคำขอซ้ำที่สร้างออเดอร์ไปแล้ว
-    if (replay()) return;
 
-    const order = orders.create({
+    // ที่เก็บข้อมูลกันสั่งซ้ำให้ในจังหวะเดียว (ถ้ามีคำขอซ้ำแทรกเข้ามา จะได้ออเดอร์เดิม)
+    const { order, created } = await orders.create({
       gameSlug: game.slug,
       gameName: game.name,
       packageId: pkg.id,
@@ -124,12 +118,12 @@ function createApp() {
       expiresAt: new Date(Date.now() + config.orderTtlMinutes * 60000).toISOString(),
       idempotencyKey: hasKey ? key : null,
     });
-    res.status(201).json({ id: order.id, token: order.token });
+    res.status(created ? 201 : 200).json({ id: order.id, token: order.token });
   }));
 
-  function findOrderForCustomer(req, res) {
+  async function findOrderForCustomer(req, res) {
     const token = req.query.t || (req.body && req.body.t);
-    const order = orders.find(req.params.id);
+    const order = await orders.find(req.params.id);
     if (!order || !token || !safeEqual(order.token, token)) {
       fail(res, 404, 'ไม่พบออเดอร์ หรือลิงก์ไม่ถูกต้อง');
       return null;
@@ -138,7 +132,7 @@ function createApp() {
   }
 
   app.get('/api/orders/:id', wrap(async (req, res) => {
-    const order = findOrderForCustomer(req, res);
+    const order = await findOrderForCustomer(req, res);
     if (!order) return;
     const data = orders.publicView(order);
     data.serverTime = new Date().toISOString();
@@ -152,8 +146,8 @@ function createApp() {
   }));
 
   // SSE: push สถานะทันทีที่เปลี่ยน (ไม่ poll ฐานข้อมูล)
-  app.get('/api/orders/:id/events', (req, res) => {
-    const order = findOrderForCustomer(req, res);
+  app.get('/api/orders/:id/events', wrap(async (req, res) => {
+    const order = await findOrderForCustomer(req, res);
     if (!order) return;
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -173,13 +167,13 @@ function createApp() {
       clearInterval(ping);
       orders.bus.off('status', onStatus);
     });
-  });
+  }));
 
-  app.post('/api/orders/:id/notify', security.limits.notify, (req, res) => {
-    const order = findOrderForCustomer(req, res);
+  app.post('/api/orders/:id/notify', security.limits.notify, wrap(async (req, res) => {
+    const order = await findOrderForCustomer(req, res);
     if (!order) return;
     try {
-      orders.transition(order.id, 'paid_pending_review', 'customer', {
+      await orders.transition(order.id, 'paid_pending_review', 'customer', {
         from: ['pending_payment', 'expired'],
         patch: { customerNote: text(req.body.note, 200), lineId: text(req.body.lineId, 60) },
       });
@@ -194,10 +188,10 @@ function createApp() {
       `💸 ลูกค้าแจ้งโอน${order.status === 'expired' ? ' (หลังหมดเวลา)' : ''} รอตรวจยอด: ${orderLine(order)}${note ? ` · หมายเหตุ: ${note}` : ''}`
     );
     res.json({ ok: true });
-  });
+  }));
 
   // ---------- webhook ยืนยันการชำระเงิน ----------
-  app.post('/api/webhooks/payment', (req, res) => {
+  app.post('/api/webhooks/payment', wrap(async (req, res) => {
     if (!config.webhookEnabled) return fail(res, 404, 'ไม่พบ API นี้');
     const sig = String(req.get('x-payment-signature') || '').trim().replace(/^sha256=/i, '').toLowerCase();
     const expected = crypto.createHmac('sha256', config.paymentWebhookSecret).update(req.rawBody || Buffer.alloc(0)).digest('hex');
@@ -213,33 +207,32 @@ function createApp() {
       return fail(res, 400, 'ต้องมี orderId, amount และ paymentRef');
     }
 
-    const all = orders.all();
-    if (all.some((o) => o.paymentRef === paymentRef)) return res.json({ received: true, duplicate: true });
-    const order = all.find((o) => o.id === orderId);
+    const duplicate = () => res.json({ received: true, duplicate: true });
+    if (await orders.findByPaymentRef(paymentRef)) return duplicate();
+    const order = await orders.find(orderId);
     if (!order) return fail(res, 404, 'ไม่พบออเดอร์');
 
     if (satang(amount) !== satang(order.amount)) {
       adapters.sendAlert(`⚠️ ยอดโอนไม่ตรง: ${orderLine(order)} แต่ได้รับ ${baht(amount)} (ref ${paymentRef})`);
       return fail(res, 409, 'ยอดเงินไม่ตรงกับออเดอร์');
     }
-    if (['paid', 'processing', 'completed'].includes(order.status)) {
-      return res.json({ received: true, duplicate: true });
-    }
+    if (['paid', 'processing', 'completed'].includes(order.status)) return duplicate();
     if (!['pending_payment', 'paid_pending_review', 'expired'].includes(order.status)) {
       adapters.sendAlert(`🚨 ได้รับเงินของออเดอร์สถานะ "${order.status}" ต้องคืนเงินลูกค้า: ${orderLine(order)} (ref ${paymentRef})`);
       return fail(res, 409, `ออเดอร์อยู่ในสถานะ ${order.status} รับชำระไม่ได้`);
     }
     try {
-      orders.transition(order.id, 'paid', 'webhook', {
+      await orders.transition(order.id, 'paid', 'webhook', {
         from: ['pending_payment', 'paid_pending_review', 'expired'],
         patch: { paymentRef, paidAt: new Date().toISOString() },
       });
     } catch (e) {
-      if (e instanceof orders.TransitionError && e.code === 'conflict') return res.json({ received: true, duplicate: true });
+      // ส่งซ้ำพร้อมกัน: อีกคำขอจ่ายไปก่อน / paymentRef ชน unique index
+      if ((e instanceof orders.TransitionError && e.code === 'conflict') || isUniqueViolation(e)) return duplicate();
       throw e;
     }
     res.json({ received: true });
-  });
+  }));
 
   // ---------- admin API ----------
   const sessions = new Map(); // token -> expires
@@ -269,89 +262,72 @@ function createApp() {
     res.json({ ok: true });
   });
 
-  app.get('/api/admin/stats', requireAdmin, (req, res) => {
-    const byStatus = Object.fromEntries(orders.STATUSES.map((s) => [s, 0]));
-    const today = thaiDate(Date.now());
-    let revenueToday = 0;
-    for (const o of orders.all()) {
-      byStatus[o.status] = (byStatus[o.status] || 0) + 1;
-      if (o.status !== 'completed') continue;
-      const done = (o.history || []).filter((h) => h.status === 'completed').at(-1);
-      if (done && thaiDate(Date.parse(done.at)) === today) revenueToday += satang(o.amount);
-    }
+  app.get('/api/admin/stats', requireAdmin, wrap(async (req, res) => {
+    const { byStatus, revenueToday } = await orders.stats();
     res.json({
       byStatus,
-      revenueToday: revenueToday / 100,
+      revenueToday,
       autoFulfill: config.autoFulfill,
       webhookEnabled: config.webhookEnabled,
       lookupEnabled: config.lookupEnabled,
     });
-  });
+  }));
 
-  app.get('/api/admin/orders', requireAdmin, (req, res) => {
-    const status = text(req.query.status, 40);
-    const q = text(req.query.q, 100).toLowerCase();
-    const list = [];
-    const all = orders.all();
-    for (let i = all.length - 1; i >= 0 && list.length < 500; i--) {
-      const o = all[i];
-      if (status && o.status !== status) continue;
-      if (q) {
-        const hay = [o.id, o.playerLabel, o.playerId, o.playerNickname, o.contact, o.lineId, o.paymentRef, o.supplierRef,
-          ...Object.values(o.playerInputs || {})];
-        if (!hay.some((v) => v && String(v).toLowerCase().includes(q))) continue;
-      }
-      list.push(orders.adminView(o));
-    }
-    res.json(list);
-  });
+  app.get('/api/admin/orders', requireAdmin, wrap(async (req, res) => {
+    const list = await orders.list({ status: text(req.query.status, 40), q: text(req.query.q, 100), limit: 500 });
+    res.json(list.map(orders.adminView));
+  }));
 
-  app.get('/api/admin/orders/:id/audit', requireAdmin, (req, res) => {
-    if (!orders.find(req.params.id)) return fail(res, 404, 'ไม่พบออเดอร์');
-    res.json(orders.auditFor(req.params.id));
-  });
+  app.get('/api/admin/orders/:id/audit', requireAdmin, wrap(async (req, res) => {
+    if (!(await orders.find(req.params.id))) return fail(res, 404, 'ไม่พบออเดอร์');
+    res.json(await orders.auditFor(req.params.id));
+  }));
 
-  app.post('/api/admin/orders/:id/status', requireAdmin, (req, res) => {
+  app.post('/api/admin/orders/:id/status', requireAdmin, wrap(async (req, res) => {
     const { status, note } = req.body || {};
     try {
       const patch = status === 'paid' ? { paidAt: new Date().toISOString() } : undefined;
-      orders.transition(req.params.id, status, 'admin', { note: text(note, 200), patch });
+      await orders.transition(req.params.id, status, 'admin', { note: text(note, 200), patch });
     } catch (e) {
       return sendTransitionError(res, e);
     }
-    res.json({ ok: true, autoFulfillQueued: !!jobs.activeJobFor(req.params.id) });
-  });
+    // เข้าคิวที่นี่ด้วยเพื่อตอบได้แน่นอน (คิวกันงานซ้ำกับตัวฟัง event อยู่แล้ว)
+    let queued = false;
+    if (status === 'paid' && config.autoFulfill) queued = !!(await jobs.enqueueFulfill(req.params.id)).job;
+    res.json({ ok: true, autoFulfillQueued: queued || !!(await jobs.activeJobFor(req.params.id)) });
+  }));
 
   // สั่งเติมใหม่ผ่าน supplier
-  app.post('/api/admin/orders/:id/retry', requireAdmin, (req, res) => {
+  app.post('/api/admin/orders/:id/retry', requireAdmin, wrap(async (req, res) => {
     if (!config.autoFulfill) return fail(res, 400, 'ยังไม่ได้เปิดระบบเติมอัตโนมัติ (SUPPLIER_API_URL / SUPPLIER_API_KEY)');
-    const order = orders.find(req.params.id);
+    const order = await orders.find(req.params.id);
     if (!order) return fail(res, 404, 'ไม่พบออเดอร์');
     if (!['paid', 'processing', 'refund_needed'].includes(order.status)) {
       return fail(res, 400, 'สั่งเติมใหม่ได้เฉพาะออเดอร์ที่ยืนยันยอดแล้ว กำลังเติม หรือรอคืนเงิน');
     }
     try {
       if (order.status === 'refund_needed') {
-        // เปลี่ยนกลับเป็น paid → ระบบเข้าคิวให้เอง
-        orders.transition(order.id, 'paid', 'admin', { from: 'refund_needed', note: text(req.body && req.body.note, 200) || 'สั่งเติมใหม่' });
+        await orders.transition(order.id, 'paid', 'admin', {
+          from: 'refund_needed', note: text(req.body && req.body.note, 200) || 'สั่งเติมใหม่',
+        });
       }
     } catch (e) {
       return sendTransitionError(res, e);
     }
-    const job = jobs.activeJobFor(order.id) || jobs.enqueueFulfill(order.id).job;
-    orders.audit({ orderId: order.id, action: 'retry', actor: 'admin', note: `งาน ${job.id}` });
+    const { job } = await jobs.enqueueFulfill(order.id);
+    await orders.audit({ orderId: order.id, action: 'retry', actor: 'admin', note: `งาน ${job.id}` });
     res.json({ ok: true, autoFulfillQueued: true, jobId: job.id });
-  });
+  }));
 
-  app.get('/api/admin/games', requireAdmin, (req, res) => res.json(catalog.getGames()));
+  app.get('/api/admin/games', requireAdmin, wrap(async (req, res) => res.json(await catalog.getGames())));
 
-  app.put('/api/admin/games', requireAdmin, (req, res) => {
+  app.put('/api/admin/games', requireAdmin, wrap(async (req, res) => {
     const error = catalog.validateGames(req.body);
     if (error) return fail(res, 400, error);
-    store.write('games', req.body);
-    orders.audit({ action: 'games_update', actor: 'admin', note: `${req.body.length} เกม` });
+    await catalog.saveGames(req.body);
+    await orders.audit({ action: 'games_update', actor: 'admin', note: `${req.body.length} เกม` });
     res.json({ ok: true });
-  });
+  }));
 
   // ---------- error handler ----------
   app.use('/api', (req, res) => fail(res, 404, 'ไม่พบ API นี้'));
@@ -360,6 +336,7 @@ function createApp() {
     if (err.type === 'entity.parse.failed') return fail(res, 400, 'รูปแบบข้อมูลไม่ถูกต้อง');
     if (err.type === 'entity.too.large') return fail(res, 413, 'ข้อมูลมีขนาดใหญ่เกินไป');
     console.error(err);
+    if (res.headersSent) return res.end();
     fail(res, 500, 'เกิดข้อผิดพลาดในระบบ ลองใหม่อีกครั้ง');
   });
 

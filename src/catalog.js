@@ -1,13 +1,14 @@
 // แคตตาล็อกเกม/แพ็กเกจ และการตรวจข้อมูลผู้เล่นตาม fields ของแต่ละเกม
-const store = require('./store');
+const repo = require('./repo');
 
 const MAX_INPUT = 64;
 const BAD_CHARS = /[<>"'`]/;
 
-const getGames = () => store.read('games', []);
+const getGames = () => repo.listGames();
+const saveGames = (games) => repo.replaceGames(games);
 
-function findGame(slug, { includeInactive = false } = {}) {
-  return getGames().find((g) => g.slug === slug && (includeInactive || g.active !== false)) || null;
+async function findGame(slug, { includeInactive = false } = {}) {
+  return (await getGames()).find((g) => g.slug === slug && (includeInactive || g.active !== false)) || null;
 }
 
 function findPackage(game, packageId) {
@@ -147,6 +148,7 @@ function validateGames(games) {
 
 module.exports = {
   getGames,
+  saveGames,
   findGame,
   findPackage,
   publicGame,

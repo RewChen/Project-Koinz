@@ -100,6 +100,9 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | `PROMPTPAY_NAME` | `ร้าน Koinz` | ชื่อบัญชีที่ลูกค้าเห็นตอนโอน |
 | `ADMIN_PASSWORD` | `admin1234` | รหัสผ่านหลังบ้าน (production ต้องตั้งเอง ยาว ≥ 12 ตัว และไม่ใช่ค่าตัวอย่าง) |
 | `KOINZ_DATA_DIR` | `./data` | โฟลเดอร์เก็บไฟล์ JSON (เทสใช้โฟลเดอร์ชั่วคราว) |
+| `DATABASE_URL` | – | ตั้ง = ใช้ PostgreSQL แทนไฟล์ JSON (migrate + ใส่เกมตั้งต้นเองตอนเริ่ม) — ใน Docker Compose ตั้งให้อัตโนมัติ |
+| `POSTGRES_PASSWORD` | – | รหัสผ่าน PostgreSQL สำหรับ Docker Compose (จำเป็นเมื่อใช้ Docker) |
+| `TEST_DATABASE_URL` | – | ใช้กับ `npm run test:pg` เท่านั้น: เทสจะสร้าง/ลบฐานข้อมูลชั่วคราวผ่าน connection นี้ |
 | `ORDER_TTL_MINUTES` | `15` | เวลาให้ลูกค้าโอน (นาที, ใส่ทศนิยมได้) |
 | `SHOP_LINE_URL` | – | ลิงก์ LINE ร้าน แสดงในหน้าออเดอร์ |
 | `PAYMENT_WEBHOOK_SECRET` | – | รหัสลับตรวจลายเซ็น webhook ชำระเงิน — เว้นว่าง = ปิด webhook (404) |

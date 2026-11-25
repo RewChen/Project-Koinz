@@ -7,13 +7,17 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "test:pg": "docker compose run --rm app node --test",
+    "db:migrate": "node db/migrate.js",
+    "db:import": "node db/import-json.js"
   },
   "engines": {
     "node": ">=18"
   },
   "dependencies": {
     "express": "^4.21.2",
+    "pg": "^8.23.1",
     "qrcode": "^1.5.4"
   }
 }

@@ -21,6 +21,8 @@ const config = {
   adminPassword: str(env.ADMIN_PASSWORD, DEFAULT_ADMIN_PASSWORD),
   adminPasswordSet: !!str(env.ADMIN_PASSWORD),
   dataDir: path.resolve(str(env.KOINZ_DATA_DIR, path.join(__dirname, '..', 'data'))),
+  // ตั้ง = ใช้ PostgreSQL แทนไฟล์ JSON (เช่น postgres://koinz:รหัส@db:5432/koinz)
+  databaseUrl: str(env.DATABASE_URL),
 
   // ออเดอร์
   orderTtlMinutes: num(env.ORDER_TTL_MINUTES, 15),

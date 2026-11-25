@@ -1,4 +1,6 @@
-// เทส API แบบ end-to-end: เปิด server.js เป็น process แยก พร้อมโฟลเดอร์ข้อมูลชั่วคราว
+// เทส API แบบ end-to-end: เปิด server.js เป็น process แยก พร้อมที่เก็บข้อมูลชั่วคราวของตัวเอง
+//   npm test                → ไฟล์ JSON ในโฟลเดอร์ชั่วคราว
+//   TEST_DATABASE_URL=…     → PostgreSQL: สร้างฐานข้อมูลใหม่ต่อ 1 เซิร์ฟเวอร์ แล้วลบทิ้ง (npm run test:pg)
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
@@ -30,16 +32,40 @@ const BASE_ENV = {
   ADMIN_ALERT_WEBHOOK: '',
   FRONTEND_ORIGIN: '',
   TRUST_PROXY: '',
+  DATABASE_URL: '',
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const PG_ADMIN_URL = process.env.TEST_DATABASE_URL || '';
+
+// PostgreSQL: สร้างฐานข้อมูลว่างใหม่ → { url, drop }
+async function createTestDatabase() {
+  const { Client } = require('pg');
+  const name = 'koinz_t_' + require('node:crypto').randomBytes(5).toString('hex');
+  const admin = new Client({ connectionString: PG_ADMIN_URL });
+  await admin.connect();
+  await admin.query(`CREATE DATABASE ${name}`);
+  await admin.end();
+  const url = new URL(PG_ADMIN_URL);
+  url.pathname = '/' + name;
+  return {
+    url: url.toString(),
+    async drop() {
+      const c = new Client({ connectionString: PG_ADMIN_URL });
+      await c.connect();
+      await c.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+      await c.end();
+    },
+  };
+}
 
 async function startServer(env = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koinz-test-'));
   fs.copyFileSync(GAMES, path.join(dataDir, 'games.json'));
+  const db = PG_ADMIN_URL ? await createTestDatabase() : null;
   const proc = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
     cwd: ROOT,
-    env: { ...process.env, ...BASE_ENV, KOINZ_DATA_DIR: dataDir, ...env },
+    env: { ...process.env, ...BASE_ENV, KOINZ_DATA_DIR: dataDir, ...(db ? { DATABASE_URL: db.url } : {}), ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';
@@ -70,9 +96,16 @@ async function startServer(env = {}) {
     return { status: res.status, headers: res.headers, text, body: json };
   }
 
-  const readData = (name) => {
-    try { return JSON.parse(fs.readFileSync(path.join(dataDir, `${name}.json`), 'utf8')); } catch { return null; }
-  };
+  // อ่านข้อมูลที่เซิร์ฟเวอร์บันทึก (รูปแบบเดียวกันทั้งไฟล์ JSON และ PostgreSQL)
+  let pgRepo = null;
+  async function readData(name) {
+    if (!db) {
+      try { return JSON.parse(fs.readFileSync(path.join(dataDir, `${name}.json`), 'utf8')); } catch { return null; }
+    }
+    pgRepo = pgRepo || require('../src/repo/pg').createPgRepo(db.url);
+    const fn = { orders: 'listAllOrders', jobs: 'listJobs', audit: 'listAudit', games: 'listGames' }[name];
+    return pgRepo[fn]();
+  }
 
   async function stop() {
     if (proc.exitCode === null) {
@@ -80,6 +113,8 @@ async function startServer(env = {}) {
       await new Promise((r) => proc.once('exit', r));
     }
     fs.rmSync(dataDir, { recursive: true, force: true });
+    if (pgRepo) await pgRepo.close();
+    if (db) await db.drop();
   }
 
   return { base, req, readData, stop, dataDir };
@@ -161,7 +196,7 @@ describe('Phase 1 — แคตตาล็อก ออเดอร์ หม�
     const r = await s.req('POST', '/api/orders', mlOrder({ playerInputs: { uid: '123456789', zone: '1234', evil: 'x' } }));
     assert.equal(r.status, 201);
     assert.ok(r.body.id && r.body.token);
-    const o = s.readData('orders').find((x) => x.id === r.body.id);
+    const o = (await s.readData('orders')).find((x) => x.id === r.body.id);
     assert.deepEqual(o.playerInputs, { uid: '123456789', zone: '1234' });
     assert.equal(o.playerLabel, 'User ID 123456789 · Zone ID 1234');
     assert.equal(o.amount, 159);
@@ -190,7 +225,7 @@ describe('Phase 1 — แคตตาล็อก ออเดอร์ หม�
     assert.equal(c.status, 200);
     assert.equal(a.body.id, b.body.id);
     assert.equal(a.body.id, c.body.id);
-    assert.equal(s.readData('orders').filter((o) => o.idempotencyKey === key).length, 1);
+    assert.equal((await s.readData('orders')).filter((o) => o.idempotencyKey === key).length, 1);
   });
 
   test('ไม่ตั้ง LOOKUP → lookupEnabled false และ /api/player/lookup ตอบ 404', async () => {
@@ -212,13 +247,13 @@ describe('Phase 1 — แคตตาล็อก ออเดอร์ หม�
     assert.equal(r.status, 200);
     r = await s.req('POST', `/api/admin/orders/${o.id}/status`, { status: 'completed', note: 'เติมแล้ว' }, auth);
     assert.equal(r.status, 200);
-    const audit = s.readData('audit').filter((a) => a.orderId === o.id);
+    const audit = (await s.readData('audit')).filter((a) => a.orderId === o.id);
     assert.deepEqual(audit.map((a) => [a.to, a.actor]), [
       ['pending_payment', 'customer'],
       ['paid', 'admin'],
       ['completed', 'admin'],
     ]);
-    const saved = s.readData('orders').find((x) => x.id === o.id);
+    const saved = (await s.readData('orders')).find((x) => x.id === o.id);
     assert.deepEqual(saved.history.map((h) => h.by), ['customer', 'admin', 'admin']);
   });
 
@@ -250,13 +285,13 @@ describe('Phase 1 — ออเดอร์หมดอายุ (ORDER_TTL_MINU
     const again = await s.req('POST', `/api/orders/${id}/notify`, { t: token });
     assert.equal(again.status, 400);
 
-    const audit = s.readData('audit').filter((a) => a.orderId === id);
+    const audit = (await s.readData('audit')).filter((a) => a.orderId === id);
     assert.deepEqual(audit.map((a) => [a.to, a.actor]), [
       ['pending_payment', 'customer'],
       ['expired', 'system'],
       ['paid_pending_review', 'customer'],
     ]);
-    const saved = s.readData('orders').find((x) => x.id === id);
+    const saved = (await s.readData('orders')).find((x) => x.id === id);
     assert.equal(saved.lineId, 'koinzfan');
     assert.equal(saved.customerNote, 'โอนแล้ว 18:30');
   });
@@ -274,7 +309,7 @@ describe('Phase 1 — ตรวจชื่อในเกม', () => {
       const bad = await s.req('POST', '/api/player/lookup', { gameSlug: 'mobile-legends', playerInputs: { uid: '1' } });
       assert.equal(bad.status, 400);
       const { id } = (await s.req('POST', '/api/orders', mlOrder())).body;
-      assert.equal(s.readData('orders').find((o) => o.id === id).playerNickname, r.body.nickname);
+      assert.equal((await s.readData('orders')).find((o) => o.id === id).playerNickname, r.body.nickname);
     } finally {
       await s.stop();
     }
@@ -364,16 +399,16 @@ describe('Phase 2 — webhook ยืนยันการชำระเงิ�
     r = await webhook(s, { orderNumber: id, amount: '159.00', paymentReference: 'BANK-0002' });
     assert.deepEqual(r.body, { received: true, duplicate: true });
 
-    const audit = s.readData('audit').filter((a) => a.orderId === id).map((a) => [a.to, a.actor]);
+    const audit = (await s.readData('audit')).filter((a) => a.orderId === id).map((a) => [a.to, a.actor]);
     assert.deepEqual(audit.at(-1), ['paid', 'webhook']);
   });
 
   test('ออเดอร์ expired ได้ webhook ยอดถูก → paid', async () => {
     const { id } = (await s.req('POST', '/api/orders', mlOrder())).body;
-    assert.ok(await waitFor(() => s.readData('orders').find((o) => o.id === id).status === 'expired', 6000));
+    assert.ok(await waitFor(async () => (await s.readData('orders')).find((o) => o.id === id).status === 'expired', 6000));
     const r = await webhook(s, { orderId: id, amount: 159, paymentRef: 'BANK-LATE' });
     assert.equal(r.status, 200);
-    assert.equal(s.readData('orders').find((o) => o.id === id).status, 'paid');
+    assert.equal((await s.readData('orders')).find((o) => o.id === id).status, 'paid');
   });
 
   test('ออเดอร์ที่ยกเลิกแล้วได้เงิน → 409 + แจ้งเตือนให้คืนเงิน', async () => {
@@ -419,12 +454,12 @@ describe('Phase 2 — เติมอัตโนมัติผ่าน suppli
       assert.equal((await s.req('GET', '/api/config')).body.autoFulfill, true);
       const { id } = (await s.req('POST', '/api/orders', mlOrder())).body;
       await webhook(s, { orderId: id, amount: 159, paymentRef: 'BANK-SUP' });
-      const done = await waitFor(() => s.readData('orders').find((o) => o.id === id).status === 'completed', 8000);
+      const done = await waitFor(async () => (await s.readData('orders')).find((o) => o.id === id).status === 'completed', 8000);
       assert.ok(done, 'ออเดอร์ควรจบที่ completed');
-      const order = s.readData('orders').find((o) => o.id === id);
+      const order = (await s.readData('orders')).find((o) => o.id === id);
       assert.equal(order.supplierRef, 'SUP-777');
       assert.deepEqual(order.history.map((h) => h.status), ['pending_payment', 'paid', 'processing', 'completed']);
-      const job = s.readData('jobs').find((j) => j.orderId === id);
+      const job = (await s.readData('jobs')).find((j) => j.orderId === id);
       assert.equal(job.attempts, 3);
       assert.equal(job.done, true);
       assert.equal(job.result, 'completed');
@@ -451,9 +486,9 @@ describe('Phase 2 — เติมอัตโนมัติผ่าน suppli
       const auth = await adminAuth(s);
       const { id } = (await s.req('POST', '/api/orders', mlOrder())).body;
       await s.req('POST', `/api/admin/orders/${id}/status`, { status: 'paid' }, auth);
-      assert.ok(await waitFor(() => s.readData('orders').find((o) => o.id === id).status === 'refund_needed', 8000));
+      assert.ok(await waitFor(async () => (await s.readData('orders')).find((o) => o.id === id).status === 'refund_needed', 8000));
       assert.equal(calls, 3);
-      const job = s.readData('jobs').find((j) => j.orderId === id);
+      const job = (await s.readData('jobs')).find((j) => j.orderId === id);
       assert.equal(job.result, 'failed');
       assert.match(job.lastError, /HTTP 500/);
       assert.ok(await waitFor(() => alert.alerts.some((a) => a.content.includes(id) && /เติมไม่สำเร็จ/.test(a.content))));
@@ -473,7 +508,7 @@ describe('Phase 2 — เติมอัตโนมัติผ่าน suppli
       const auth = await adminAuth(s);
       const { id } = (await s.req('POST', '/api/orders', mlOrder())).body;
       await s.req('POST', `/api/admin/orders/${id}/status`, { status: 'paid' }, auth);
-      assert.ok(await waitFor(() => s.readData('orders').find((o) => o.id === id).status === 'refund_needed', 6000));
+      assert.ok(await waitFor(async () => (await s.readData('orders')).find((o) => o.id === id).status === 'refund_needed', 6000));
     } finally {
       await s.stop();
       await sup.close();
@@ -585,7 +620,7 @@ describe('Phase 3 — หลังบ้าน', () => {
   });
   after(async () => { await s.stop(); await sup.close(); });
 
-  const statusOf = (id) => s.readData('orders').find((o) => o.id === id).status;
+  const statusOf = async (id) => (await s.readData('orders')).find((o) => o.id === id).status;
 
   test('ต้อง login ทุก API และ logout แล้ว token ใช้ไม่ได้', async () => {
     for (const url of ['/api/admin/stats', '/api/admin/orders', '/api/admin/games']) {
@@ -622,7 +657,7 @@ describe('Phase 3 — หลังบ้าน', () => {
     const r = await s.req('POST', `/api/admin/orders/${id}/status`, { status: 'paid', note: 'เช็คยอดในแอปแล้ว' }, auth);
     assert.equal(r.status, 200);
     assert.equal(r.body.autoFulfillQueued, true);
-    assert.ok(await waitFor(() => statusOf(id) === 'completed', 5000));
+    assert.ok(await waitFor(async () => (await statusOf(id)) === 'completed', 5000));
 
     // audit แสดงครบทุกการเปลี่ยนสถานะ พร้อมผู้ทำ
     const audit = (await s.req('GET', `/api/admin/orders/${id}/audit`, undefined, auth)).body;
@@ -639,7 +674,7 @@ describe('Phase 3 — หลังบ้าน', () => {
 
   test('stats: นับตามสถานะ + ยอดขายวันนี้ + ป้ายโหมด', async () => {
     const st = (await s.req('GET', '/api/admin/stats', undefined, auth)).body;
-    const orders = s.readData('orders');
+    const orders = (await s.readData('orders'));
     for (const status of ['pending_payment', 'paid_pending_review', 'completed']) {
       assert.equal(st.byStatus[status], orders.filter((o) => o.status === status).length, status);
     }
@@ -653,14 +688,14 @@ describe('Phase 3 — หลังบ้าน', () => {
     supplierFails = true;
     const { id } = (await s.req('POST', '/api/orders', mlOrder())).body;
     await s.req('POST', `/api/admin/orders/${id}/status`, { status: 'paid' }, auth);
-    assert.ok(await waitFor(() => statusOf(id) === 'refund_needed', 5000));
+    assert.ok(await waitFor(async () => (await statusOf(id)) === 'refund_needed', 5000));
 
     let r = await s.req('POST', `/api/admin/orders/${id}/retry`, {}, auth);
     supplierFails = false;
     assert.equal(r.status, 200);
     assert.equal(r.body.autoFulfillQueued, true);
-    assert.ok(await waitFor(() => statusOf(id) === 'completed', 5000));
-    assert.equal(s.readData('orders').find((o) => o.id === id).supplierRef, 'SUP-' + id);
+    assert.ok(await waitFor(async () => (await statusOf(id)) === 'completed', 5000));
+    assert.equal((await s.readData('orders')).find((o) => o.id === id).supplierRef, 'SUP-' + id);
 
     r = await s.req('POST', `/api/admin/orders/${id}/retry`, {}, auth);
     assert.equal(r.status, 400); // completed แล้ว สั่งเติมใหม่ไม่ได้
@@ -692,7 +727,7 @@ describe('Phase 3 — หลังบ้าน', () => {
     r = await s.req('PUT', '/api/admin/games', ok, auth);
     assert.equal(r.status, 200);
     assert.equal((await s.req('GET', '/api/games/rov')).body.packages[0].price, 36);
-    assert.ok(s.readData('audit').some((a) => a.action === 'games_update' && a.actor === 'admin'));
+    assert.ok((await s.readData('audit')).some((a) => a.action === 'games_update' && a.actor === 'admin'));
   });
 });
 
@@ -738,9 +773,17 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
   });
 
   test('README อธิบายตัวแปร .env ครบทุกตัวที่โค้ดอ่าน และ .env.example มีครบ', () => {
-    const code = ['server.js', ...fs.readdirSync(path.join(ROOT, 'src')).map((f) => path.join('src', f))]
-      .map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8'))
-      .join('\n');
+    const files = ['server.js'];
+    const walk = (dir) => {
+      for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
+        const rel = path.join(dir, e.name);
+        if (e.isDirectory()) walk(rel);
+        else if (e.name.endsWith('.js')) files.push(rel);
+      }
+    };
+    walk('src');
+    walk('db');
+    const code = files.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
     const vars = [...new Set([...code.matchAll(/env\.([A-Z][A-Z0-9_]+)/g)].map((m) => m[1]))];
     assert.ok(vars.length >= 20, `อ่าน env ได้ ${vars.length} ตัว`);
     const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');

@@ -1,6 +1,7 @@
-# ไฟล์หลัก ใช้ร่วมกันทั้ง dev และ prod
+# ไฟล์หลัก ใช้ร่วมกันทั้ง dev และ prod — ทุกอย่างที่ระบบต้องใช้อยู่ใน container (เครื่องมีแค่ Docker ก็พอ)
 #   dev : docker compose up --build              (โหลด compose.override.yaml อัตโนมัติ)
 #   prod: docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+# ต้องมี POSTGRES_PASSWORD ในไฟล์ .env
 name: koinz
 
 services:
@@ -13,9 +14,29 @@ services:
       # ค่าที่ต้องตรงกับ container เสมอ (กันค่าจาก .env สำหรับรันบนเครื่องหลุดเข้ามา)
       PORT: "3000"
       KOINZ_DATA_DIR: /app/data
+      DATABASE_URL: postgres://koinz:${POSTGRES_PASSWORD:?กรุณาตั้ง POSTGRES_PASSWORD ในไฟล์ .env}@db:5432/koinz
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
     volumes:
-      - koinz-data:/app/data
+      - koinz-data:/app/data # ใช้เมื่อไม่ได้ตั้ง DATABASE_URL (โหมดไฟล์ JSON)
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: koinz
+      POSTGRES_USER: koinz
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?กรุณาตั้ง POSTGRES_PASSWORD ในไฟล์ .env}
+    volumes:
+      - koinz-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U koinz -d koinz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
 
 volumes:
   koinz-data:
+  koinz-pg:
