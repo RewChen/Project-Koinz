@@ -277,6 +277,7 @@ describe('Phase 1 — ออเดอร์หมดอายุ (ORDER_TTL_MINU
     }, 5000);
     assert.ok(o, 'ออเดอร์ควรหมดอายุภายใน 5 วินาที');
     assert.ok(!('qr' in o));
+    assert.equal(o.expired, true);
 
     const n = await s.req('POST', `/api/orders/${id}/notify`, { t: token, note: 'โอนแล้ว 18:30', lineId: 'koinzfan' });
     assert.equal(n.status, 200);
@@ -755,7 +756,11 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
         const refs = [...html.matchAll(/(?:href|src)="([^"]+)"/g)]
           .map((m) => m[1])
           .filter((u) => !/^(https?:|\/\/|#|data:|mailto:|\$\{)/.test(u) && !u.includes('${'));
-        assert.ok(refs.includes('css/style.css') && refs.includes('js/config.js') && refs.includes('js/common.js'), page);
+        // game.html เป็นแค่หน้า redirect ไปหน้าแรก (?game=) ไม่มี CSS/JS ของตัวเอง
+        const isRedirect = /location\.replace\(/.test(html);
+        if (!isRedirect) {
+          assert.ok(refs.includes('css/style.css') && refs.includes('js/config.js') && refs.includes('js/common.js'), page);
+        }
         for (const ref of refs) {
           const url = new URL(ref, base + page);
           const r = await fetch(url);
@@ -765,8 +770,14 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
       // config.js ต้องโหลดก่อน common.js
       for (const page of pages) {
         const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8');
+        if (/location\.replace\(/.test(html)) continue;
         assert.ok(html.indexOf('js/config.js') < html.indexOf('js/common.js'), page);
+        assert.match(html, /family=Anuphan/, `${page} ต้องใช้ฟอนต์ Anuphan`);
       }
+      // ไม่มีสีโทนครามเดิม / ฟอนต์เดิมเหลืออยู่
+      const all = fs.readdirSync(path.join(PUBLIC, 'css')).map((f) => fs.readFileSync(path.join(PUBLIC, 'css', f), 'utf8')).join('')
+        + pages.map((p) => fs.readFileSync(path.join(PUBLIC, p), 'utf8')).join('');
+      assert.doesNotMatch(all, /#1c1442|#ffc23d|Mitr|IBM Plex/i);
     } finally {
       await srv.close();
     }

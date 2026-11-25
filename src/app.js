@@ -137,6 +137,8 @@ function createApp() {
     const data = orders.publicView(order);
     data.serverTime = new Date().toISOString();
     const open = !order.expiresAt || Date.parse(order.expiresAt) > Date.now();
+    // QR หมดเวลาแล้ว (รวมช่วงไม่กี่วินาทีก่อนตัวกวาดเปลี่ยนสถานะเป็น expired)
+    data.expired = order.status === 'expired' || (order.status === 'pending_payment' && !open);
     if (order.status === 'pending_payment' && open) {
       const payload = promptPayPayload(config.promptPayId, order.amount);
       data.qr = await QRCode.toDataURL(payload, { margin: 1, width: 320 });
@@ -175,7 +177,7 @@ function createApp() {
     try {
       await orders.transition(order.id, 'paid_pending_review', 'customer', {
         from: ['pending_payment', 'expired'],
-        patch: { customerNote: text(req.body.note, 200), lineId: text(req.body.lineId, 60) },
+        patch: { customerNote: text(req.body.note, 200), lineId: text(req.body.lineId, 50) },
       });
     } catch (e) {
       if (e instanceof orders.TransitionError && e.code !== 'not_found') {
