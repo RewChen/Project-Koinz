@@ -48,8 +48,8 @@
         $('#game-list').innerHTML = games.length
           ? games.map((g) => `
               <a class="game" href="/game.html?slug=${encodeURIComponent(g.slug)}">
-                <span class="icon" style="--c:${esc(g.color)}">${esc(g.icon)}</span>
-                <span><strong>${esc(g.name)}</strong><span>${esc(g.currency)} เริ่มต้น ${baht(g.minPrice)}</span></span>
+                <span class="icon" style="--c:${esc(g.color)}">${esc(g.initial)}</span>
+                <span><strong>${esc(g.name)}</strong><span>${esc(g.currency)}${g.minPrice != null ? ` เริ่มต้น ${baht(g.minPrice)}` : ''}</span></span>
               </a>`).join('')
           : '<p class="empty">ยังไม่มีเกมในร้าน เพิ่มได้ที่หลังบ้าน</p>';
       })

@@ -165,6 +165,9 @@ input:focus, select:focus, textarea:focus { border-color: var(--gold); outline: 
 .badge.processing { background: #3b2a6b; color: #cdb8ff; }
 .badge.completed { background: #12452f; color: var(--mint); }
 .badge.cancelled { background: #4d1d28; color: var(--rose); }
+.badge.paid { background: #173a55; color: var(--mint); }
+.badge.refund_needed { background: #4d1d28; color: var(--amber); }
+.badge.expired, .badge.refunded { color: var(--muted); }
 
 .pay { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: center; }
 .pay img { width: 100%; border-radius: 14px; background: #fff; padding: 8px; }

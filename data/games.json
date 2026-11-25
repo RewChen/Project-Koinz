@@ -1,63 +1,403 @@
 [
   {
-    "slug": "dragon-arena",
-    "name": "Dragon Arena",
-    "icon": "🐉",
-    "color": "#E8505B",
+    "slug": "rov",
+    "name": "Garena RoV",
+    "category": "MOBA",
+    "color": "#D9534F",
+    "currency": "คูปอง",
+    "active": true,
+    "fields": [
+      {
+        "name": "uid",
+        "label": "OpenID",
+        "placeholder": "กรอก OpenID",
+        "hint": "ดู OpenID ได้ที่หน้าโปรไฟล์ในเกม",
+        "pattern": "^[0-9]{6,20}$",
+        "patternHint": "ใส่เฉพาะตัวเลข 6–20 หลัก",
+        "inputmode": "numeric"
+      }
+    ],
+    "packages": [
+      {
+        "id": "rov-1",
+        "name": "คูปอง 35",
+        "price": 35,
+        "sku": "ROV-1",
+        "cost": 29.75
+      },
+      {
+        "id": "rov-2",
+        "name": "คูปอง 70",
+        "price": 69,
+        "sku": "ROV-2",
+        "cost": 58.65
+      },
+      {
+        "id": "rov-3",
+        "name": "คูปอง 140",
+        "price": 135,
+        "sku": "ROV-3",
+        "cost": 114.75
+      },
+      {
+        "id": "rov-4",
+        "name": "คูปอง 350",
+        "price": 329,
+        "tag": "ขายดี",
+        "sku": "ROV-4",
+        "cost": 279.65
+      },
+      {
+        "id": "rov-5",
+        "name": "คูปอง 700",
+        "price": 649,
+        "sku": "ROV-5",
+        "cost": 551.65
+      },
+      {
+        "id": "rov-6",
+        "name": "คูปอง 1,400",
+        "price": 1290,
+        "sku": "ROV-6",
+        "cost": 1096.5
+      }
+    ]
+  },
+  {
+    "slug": "mobile-legends",
+    "name": "Mobile Legends",
+    "category": "MOBA",
+    "color": "#2F7FD1",
     "currency": "เพชร",
-    "uidHint": "ดู UID ได้ที่หน้าโปรไฟล์ในเกม (มุมซ้ายบน)",
-    "servers": [],
+    "active": true,
+    "fields": [
+      {
+        "name": "uid",
+        "label": "User ID",
+        "placeholder": "เช่น 123456789",
+        "hint": "แตะรูปโปรไฟล์ในเกม จะเห็น ID (Zone ID อยู่ในวงเล็บ)",
+        "pattern": "^[0-9]{5,12}$",
+        "patternHint": "ใส่เฉพาะตัวเลข",
+        "inputmode": "numeric"
+      },
+      {
+        "name": "zone",
+        "label": "Zone ID",
+        "placeholder": "เช่น 1234",
+        "pattern": "^[0-9]{3,6}$",
+        "patternHint": "ใส่เฉพาะตัวเลข 3–6 หลัก",
+        "inputmode": "numeric"
+      }
+    ],
     "packages": [
-      { "id": "da-60", "name": "60 เพชร", "price": 29 },
-      { "id": "da-150", "name": "150 เพชร", "price": 69 },
-      { "id": "da-320", "name": "320 เพชร", "price": 139 },
-      { "id": "da-700", "name": "700 เพชร", "price": 289, "tag": "ขายดี" },
-      { "id": "da-1500", "name": "1,500 เพชร", "price": 599 },
-      { "id": "da-pass", "name": "บัตรรายเดือน", "price": 149 }
+      {
+        "id": "mobile-legends-1",
+        "name": "เพชร 86",
+        "price": 55,
+        "sku": "MOBILE-LEGENDS-1",
+        "cost": 46.75
+      },
+      {
+        "id": "mobile-legends-2",
+        "name": "เพชร 172",
+        "price": 109,
+        "sku": "MOBILE-LEGENDS-2",
+        "cost": 92.65
+      },
+      {
+        "id": "mobile-legends-3",
+        "name": "เพชร 257",
+        "price": 159,
+        "tag": "ขายดี",
+        "sku": "MOBILE-LEGENDS-3",
+        "cost": 135.15
+      },
+      {
+        "id": "mobile-legends-4",
+        "name": "เพชร 514",
+        "price": 319,
+        "sku": "MOBILE-LEGENDS-4",
+        "cost": 271.15
+      },
+      {
+        "id": "mobile-legends-5",
+        "name": "เพชร 1,028",
+        "price": 629,
+        "sku": "MOBILE-LEGENDS-5",
+        "cost": 534.65
+      },
+      {
+        "id": "mobile-legends-6",
+        "name": "เพชร 2,057",
+        "price": 1249,
+        "sku": "MOBILE-LEGENDS-6",
+        "cost": 1061.65
+      }
     ]
   },
   {
-    "slug": "sky-legends",
-    "name": "Sky Legends",
-    "icon": "🪽",
-    "color": "#3FA7F5",
-    "currency": "คริสตัล",
-    "uidHint": "เปิดเมนูตั้งค่า > บัญชี แล้วคัดลอก Player ID",
-    "servers": ["Asia", "Global", "Europe"],
+    "slug": "genshin-impact",
+    "name": "Genshin Impact",
+    "category": "RPG",
+    "color": "#B8892E",
+    "currency": "Genesis Crystals",
+    "active": true,
+    "fields": [
+      {
+        "name": "uid",
+        "label": "UID",
+        "placeholder": "UID 9–10 หลัก",
+        "hint": "ดู UID ได้ที่มุมขวาล่างของหน้าจอในเกม",
+        "pattern": "^[0-9]{9,10}$",
+        "patternHint": "UID ต้องเป็นตัวเลข 9–10 หลัก",
+        "inputmode": "numeric"
+      },
+      {
+        "name": "server",
+        "label": "เซิร์ฟเวอร์",
+        "options": [
+          "Asia",
+          "America",
+          "Europe",
+          "TW/HK/MO"
+        ]
+      }
+    ],
     "packages": [
-      { "id": "sl-80", "name": "80 คริสตัล", "price": 35 },
-      { "id": "sl-400", "name": "400 คริสตัล", "price": 159, "tag": "คุ้มสุด" },
-      { "id": "sl-850", "name": "850 คริสตัล", "price": 329 },
-      { "id": "sl-1800", "name": "1,800 คริสตัล", "price": 659 }
+      {
+        "id": "genshin-impact-1",
+        "name": "พรแห่งดวงจันทร์",
+        "price": 159,
+        "tag": "ขายดี",
+        "sku": "GENSHIN-IMPACT-1",
+        "cost": 135.15
+      },
+      {
+        "id": "genshin-impact-2",
+        "name": "300 Genesis Crystals",
+        "price": 159,
+        "sku": "GENSHIN-IMPACT-2",
+        "cost": 135.15
+      },
+      {
+        "id": "genshin-impact-3",
+        "name": "980 Genesis Crystals",
+        "price": 499,
+        "sku": "GENSHIN-IMPACT-3",
+        "cost": 424.15
+      },
+      {
+        "id": "genshin-impact-4",
+        "name": "1,980 Genesis Crystals",
+        "price": 999,
+        "sku": "GENSHIN-IMPACT-4",
+        "cost": 849.15
+      },
+      {
+        "id": "genshin-impact-5",
+        "name": "3,280 Genesis Crystals",
+        "price": 1590,
+        "sku": "GENSHIN-IMPACT-5",
+        "cost": 1351.5
+      },
+      {
+        "id": "genshin-impact-6",
+        "name": "6,480 Genesis Crystals",
+        "price": 3190,
+        "sku": "GENSHIN-IMPACT-6",
+        "cost": 2711.5
+      }
     ]
   },
   {
-    "slug": "neon-strike",
-    "name": "Neon Strike",
-    "icon": "🎯",
-    "color": "#B06CFF",
-    "currency": "เครดิต",
-    "uidHint": "ดู UID ได้ที่หน้าล็อบบี้ ใต้ชื่อผู้เล่น",
-    "servers": [],
+    "slug": "free-fire",
+    "name": "Free Fire",
+    "category": "Action",
+    "color": "#E07A1F",
+    "currency": "เพชร",
+    "active": true,
+    "fields": [
+      {
+        "name": "uid",
+        "label": "Player ID",
+        "placeholder": "กรอก Player ID",
+        "hint": "ดู Player ID ได้ที่หน้าโปรไฟล์ในเกม",
+        "pattern": "^[0-9]{6,14}$",
+        "patternHint": "ใส่เฉพาะตัวเลข",
+        "inputmode": "numeric"
+      }
+    ],
     "packages": [
-      { "id": "ns-100", "name": "100 เครดิต", "price": 39 },
-      { "id": "ns-310", "name": "310 เครดิต", "price": 109 },
-      { "id": "ns-520", "name": "520 เครดิต", "price": 179 },
-      { "id": "ns-1050", "name": "1,050 เครดิต", "price": 349 }
+      {
+        "id": "free-fire-1",
+        "name": "เพชร 100",
+        "price": 35,
+        "sku": "FREE-FIRE-1",
+        "cost": 29.75
+      },
+      {
+        "id": "free-fire-2",
+        "name": "เพชร 310",
+        "price": 99,
+        "sku": "FREE-FIRE-2",
+        "cost": 84.15
+      },
+      {
+        "id": "free-fire-3",
+        "name": "เพชร 520",
+        "price": 159,
+        "tag": "ขายดี",
+        "sku": "FREE-FIRE-3",
+        "cost": 135.15
+      },
+      {
+        "id": "free-fire-4",
+        "name": "เพชร 1,060",
+        "price": 319,
+        "sku": "FREE-FIRE-4",
+        "cost": 271.15
+      },
+      {
+        "id": "free-fire-5",
+        "name": "เพชร 2,180",
+        "price": 629,
+        "sku": "FREE-FIRE-5",
+        "cost": 534.65
+      },
+      {
+        "id": "free-fire-6",
+        "name": "เพชร 5,600",
+        "price": 1590,
+        "sku": "FREE-FIRE-6",
+        "cost": 1351.5
+      }
     ]
   },
   {
-    "slug": "farm-tales",
-    "name": "Farm Tales",
-    "icon": "🌾",
-    "color": "#5BC46A",
-    "currency": "เหรียญทอง",
-    "uidHint": "แตะรูปโปรไฟล์ แล้วดูเลข ID ด้านล่าง",
-    "servers": [],
+    "slug": "valorant",
+    "name": "VALORANT",
+    "category": "FPS",
+    "color": "#D6404F",
+    "currency": "VP",
+    "active": true,
+    "fields": [
+      {
+        "name": "riotId",
+        "label": "Riot ID",
+        "placeholder": "GameName#Tag",
+        "hint": "รูปแบบ: ชื่อในเกม#แท็ก",
+        "pattern": "^[^#]{3,16}#[A-Za-z0-9]{3,5}$",
+        "patternHint": "กรอกในรูปแบบ ชื่อ#แท็ก เช่น Koinz#TH1"
+      }
+    ],
     "packages": [
-      { "id": "ft-500", "name": "500 เหรียญทอง", "price": 25 },
-      { "id": "ft-1200", "name": "1,200 เหรียญทอง", "price": 59 },
-      { "id": "ft-3000", "name": "3,000 เหรียญทอง", "price": 139 }
+      {
+        "id": "valorant-1",
+        "name": "475 VP",
+        "price": 159,
+        "sku": "VALORANT-1",
+        "cost": 135.15
+      },
+      {
+        "id": "valorant-2",
+        "name": "1,000 VP",
+        "price": 319,
+        "tag": "ขายดี",
+        "sku": "VALORANT-2",
+        "cost": 271.15
+      },
+      {
+        "id": "valorant-3",
+        "name": "2,050 VP",
+        "price": 639,
+        "sku": "VALORANT-3",
+        "cost": 543.15
+      },
+      {
+        "id": "valorant-4",
+        "name": "3,650 VP",
+        "price": 1090,
+        "sku": "VALORANT-4",
+        "cost": 926.5
+      },
+      {
+        "id": "valorant-5",
+        "name": "5,350 VP",
+        "price": 1590,
+        "sku": "VALORANT-5",
+        "cost": 1351.5
+      },
+      {
+        "id": "valorant-6",
+        "name": "11,000 VP",
+        "price": 3190,
+        "sku": "VALORANT-6",
+        "cost": 2711.5
+      }
+    ]
+  },
+  {
+    "slug": "delta-force",
+    "name": "Delta Force",
+    "category": "FPS",
+    "color": "#5E8C3A",
+    "currency": "Delta Coins",
+    "active": true,
+    "fields": [
+      {
+        "name": "uid",
+        "label": "Player ID",
+        "placeholder": "กรอก Player ID",
+        "hint": "ดู Player ID ได้ที่หน้าโปรไฟล์ในเกม",
+        "pattern": "^[0-9]{6,20}$",
+        "patternHint": "ใส่เฉพาะตัวเลข",
+        "inputmode": "numeric"
+      }
+    ],
+    "packages": [
+      {
+        "id": "delta-force-1",
+        "name": "60 Delta Coins",
+        "price": 35,
+        "sku": "DELTA-FORCE-1",
+        "cost": 29.75
+      },
+      {
+        "id": "delta-force-2",
+        "name": "300 Delta Coins",
+        "price": 159,
+        "sku": "DELTA-FORCE-2",
+        "cost": 135.15
+      },
+      {
+        "id": "delta-force-3",
+        "name": "680 Delta Coins",
+        "price": 319,
+        "tag": "ขายดี",
+        "sku": "DELTA-FORCE-3",
+        "cost": 271.15
+      },
+      {
+        "id": "delta-force-4",
+        "name": "1,280 Delta Coins",
+        "price": 629,
+        "sku": "DELTA-FORCE-4",
+        "cost": 534.65
+      },
+      {
+        "id": "delta-force-5",
+        "name": "3,280 Delta Coins",
+        "price": 1590,
+        "sku": "DELTA-FORCE-5",
+        "cost": 1351.5
+      },
+      {
+        "id": "delta-force-6",
+        "name": "6,480 Delta Coins",
+        "price": 3190,
+        "sku": "DELTA-FORCE-6",
+        "cost": 2711.5
+      }
     ]
   }
 ]

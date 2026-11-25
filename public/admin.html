@@ -81,7 +81,7 @@
           <span class="hint" id="count"></span>
         </div>
         <div class="table-scroll card"><table>
-          <thead><tr><th>ออเดอร์</th><th>เกม / แพ็กเกจ</th><th>UID</th><th>ติดต่อ</th><th>ยอด</th><th>หมายเหตุ</th><th>สถานะ</th></tr></thead>
+          <thead><tr><th>ออเดอร์</th><th>เกม / แพ็กเกจ</th><th>ผู้เล่น</th><th>ติดต่อ</th><th>ยอด</th><th>หมายเหตุ</th><th>สถานะ</th></tr></thead>
           <tbody id="rows"></tbody>
         </table></div>`;
       $('#filter').value = sessionStorage.getItem('koinz_filter') || 'paid_pending_review';
@@ -100,8 +100,8 @@
           <tr>
             <td>${esc(o.id)}<br><span class="hint">${thaiTime(o.createdAt)}</span></td>
             <td>${esc(o.gameName)}<br>${esc(o.packageName)}</td>
-            <td><b>${esc(o.playerId)}</b>${o.server ? `<br>${esc(o.server)}` : ''}</td>
-            <td>${esc(o.contact)}</td>
+            <td><b>${esc(o.playerLabel || o.playerId)}</b>${o.playerNickname ? `<br>${esc(o.playerNickname)}` : ''}</td>
+            <td>${esc(o.contact || '')}${o.lineId ? `<br>LINE ${esc(o.lineId)}` : ''}</td>
             <td>${baht(o.amount)}</td>
             <td>${esc(o.customerNote || '')}</td>
             <td><select data-id="${esc(o.id)}" aria-label="สถานะของ ${esc(o.id)}">
@@ -109,10 +109,10 @@
             </select></td>
           </tr>`).join('') : `<tr><td colspan="7" class="empty">ไม่มีออเดอร์ในสถานะนี้</td></tr>`;
         document.querySelectorAll('#rows select').forEach((s) =>
-          s.addEventListener('change', () => guarded(async () => {
-            await api(`/api/admin/orders/${encodeURIComponent(s.dataset.id)}/status`, { method: 'POST', headers: auth(), body: { status: s.value } });
-            loadOrders();
-          }))
+          s.addEventListener('change', async () => {
+            await guarded(() => api(`/api/admin/orders/${encodeURIComponent(s.dataset.id)}/status`, { method: 'POST', headers: auth(), body: { status: s.value } }));
+            if ($('#rows')) loadOrders(); // โหลดใหม่ทั้งสำเร็จและไม่สำเร็จ ให้ dropdown ตรงกับสถานะจริง
+          })
         );
       });
     }

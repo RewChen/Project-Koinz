@@ -12,10 +12,21 @@ const thaiTime = (iso) =>
 const STATUS = {
   pending_payment: 'รอชำระเงิน',
   paid_pending_review: 'แจ้งโอนแล้ว รอร้านตรวจสอบ',
+  paid: 'ยืนยันยอดแล้ว',
   processing: 'กำลังเติมเข้าเกม',
   completed: 'เติมสำเร็จ',
+  expired: 'หมดเวลาชำระเงิน',
   cancelled: 'ยกเลิกแล้ว',
+  refund_needed: 'เติมไม่สำเร็จ รอคืนเงิน',
+  refunded: 'คืนเงินแล้ว',
 };
+
+// รหัสสุ่มสำหรับกันสั่งซ้ำ (randomUUID ใช้ได้เฉพาะ https/localhost จึงมีสำรอง)
+function uuid() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+}
 
 async function api(url, { method = 'GET', body, headers = {} } = {}) {
   const res = await fetch(url, {
@@ -41,9 +52,8 @@ const myOrders = {
   },
 };
 
-// ชื่อร้านจาก .env
-api('/api/config')
-  .then((c) => {
-    document.querySelectorAll('[data-shop]').forEach((el) => (el.textContent = c.shopName));
-  })
-  .catch(() => {});
+// ค่าตั้งค่าร้านจาก .env (หน้าอื่นใช้ shopConfig.then(...) ได้)
+const shopConfig = api('/api/config').catch(() => ({}));
+shopConfig.then((c) => {
+  if (c.shopName) document.querySelectorAll('[data-shop]').forEach((el) => (el.textContent = c.shopName));
+});

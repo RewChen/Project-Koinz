@@ -23,73 +23,112 @@
     const params = new URLSearchParams(location.search);
     const id = params.get('id');
     const t = params.get('t');
-    const FLOW = ['pending_payment', 'paid_pending_review', 'processing', 'completed'];
-    let timer;
+    const FLOW = ['pending_payment', 'paid_pending_review', 'paid', 'processing', 'completed'];
+    const FINAL = ['completed', 'cancelled', 'refunded'];
+    let timer, tick, clockOffset = 0, cfg = {};
+
+    const notifyForm = (label) => `
+      <label for="note">หมายเหตุถึงร้าน (ไม่บังคับ)</label>
+      <input id="note" maxlength="200" placeholder="เช่น โอนจากบัญชีชื่อ… เวลา 18:30">
+      <label for="line">LINE ID สำหรับให้ร้านติดต่อกลับ (ไม่บังคับ)</label>
+      <input id="line" maxlength="60" autocomplete="off">
+      <p></p>
+      <button class="btn" id="notify">${label}</button>
+      <p class="error" id="err" role="alert"></p>`;
+
+    function timeline(o) {
+      const items = (o.history || []).map((h) => `<li class="done">${STATUS[h.status] || esc(h.status)}<time>${thaiTime(h.at)}</time></li>`);
+      const i = FLOW.indexOf(o.status);
+      if (i >= 0) FLOW.slice(i + 1).forEach((s) => items.push(`<li>${STATUS[s]}</li>`));
+      return items.join('');
+    }
 
     function render(o) {
-      const reached = (s) => o.history.find((h) => h.status === s);
-      const timeline = o.status === 'cancelled'
-        ? `<li class="done">${STATUS.cancelled}<time>${thaiTime(o.history.at(-1).at)}</time></li>`
-        : FLOW.map((s) => {
-            const h = reached(s);
-            return `<li class="${h ? 'done' : ''}">${STATUS[s]}${h ? `<time>${thaiTime(h.at)}</time>` : ''}</li>`;
-          }).join('');
+      const canPay = o.status === 'pending_payment' && o.qr;
+      const late = o.status === 'expired' || (o.status === 'pending_payment' && !o.qr);
+      const line = /^https?:\/\//.test(cfg.shopLineUrl || '') ? cfg.shopLineUrl : '';
 
       $('#app').innerHTML = `
         <div class="card">
           <p class="order-id">ออเดอร์ ${esc(o.id)}</p>
           <h1>${esc(o.gameName)} · ${esc(o.packageName)}</h1>
-          <p>UID <b>${esc(o.playerId)}</b>${o.server ? ` · เซิร์ฟเวอร์ ${esc(o.server)}` : ''}</p>
-          <span class="badge ${esc(o.status)}">${STATUS[o.status]}</span>
+          <p><b>${esc(o.playerLabel || o.playerId)}</b>${o.playerNickname ? ` · ชื่อในเกม ${esc(o.playerNickname)}` : ''}</p>
+          <span class="badge ${esc(o.status)}">${STATUS[o.status] || esc(o.status)}</span>
         </div>
 
-        ${o.status === 'pending_payment' ? `
+        ${canPay ? `
           <div class="card">
             <h2>สแกนเพื่อชำระเงิน</h2>
             <div class="pay">
-              <img src="${o.qr}" alt="QR PromptPay ยอด ${baht(o.amount)}">
+              <img src="${esc(o.qr)}" alt="QR PromptPay ยอด ${baht(o.amount)}">
               <div>
                 <div class="amount">${baht(o.amount)}</div>
                 <p>ชื่อบัญชี: ${esc(o.promptPayName)}</p>
+                <p>ชำระภายใน <b id="countdown">–</b></p>
                 <p class="hint">เปิดแอปธนาคาร > สแกน QR > ตรวจยอดให้ตรง แล้วกดยืนยัน</p>
               </div>
             </div>
-            <label for="note">หมายเหตุถึงร้าน (ไม่บังคับ)</label>
-            <input id="note" placeholder="เช่น โอนจากบัญชีชื่อ… เวลา 18:30">
-            <p></p>
-            <button class="btn" id="notify">ฉันโอนเงินแล้ว</button>
-            <p class="error" id="err" role="alert"></p>
+            ${notifyForm('ฉันโอนเงินแล้ว')}
           </div>` : ''}
+
+        ${late ? `
+          <div class="card">
+            <h2>หมดเวลาชำระเงิน</h2>
+            <p>QR นี้หมดอายุแล้ว ถ้าคุณโอนเงินไปก่อนหมดเวลา กดแจ้งโอนด้านล่าง ร้านจะตรวจสอบให้</p>
+            ${notifyForm('ฉันโอนเงินไปแล้ว')}
+          </div>` : ''}
+
+        ${o.status === 'refund_needed' ? `
+          <div class="card"><h2>เติมไม่สำเร็จ</h2><p>ร้านกำลังตรวจสอบและจะติดต่อเพื่อคืนเงินให้คุณ</p></div>` : ''}
 
         <div class="card">
           <h2>สถานะ</h2>
-          <ul class="timeline">${timeline}</ul>
+          <ul class="timeline">${timeline(o)}</ul>
           <p class="hint">หน้านี้อัปเดตอัตโนมัติ เก็บลิงก์นี้ไว้เพื่อกลับมาดูสถานะ</p>
+          ${line ? `<p><a href="${esc(line)}" target="_blank" rel="noopener">ติดต่อร้านทาง LINE</a></p>` : ''}
         </div>`;
+
+      clearInterval(tick);
+      if (canPay && o.expiresAt) {
+        const end = Date.parse(o.expiresAt);
+        const show = () => {
+          const left = Math.max(0, Math.round((end - (Date.now() + clockOffset)) / 1000));
+          $('#countdown').textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} นาที`;
+          if (left <= 0) { clearInterval(tick); setTimeout(load, 1500); }
+        };
+        show();
+        tick = setInterval(show, 1000);
+      }
 
       const btn = $('#notify');
       if (btn) btn.addEventListener('click', async () => {
+        const label = btn.textContent;
         btn.disabled = true;
         btn.textContent = 'กำลังแจ้งร้าน…';
         try {
-          await api(`/api/orders/${encodeURIComponent(id)}/notify`, { method: 'POST', body: { t, note: $('#note').value } });
+          await api(`/api/orders/${encodeURIComponent(id)}/notify`, {
+            method: 'POST', body: { t, note: $('#note').value, lineId: $('#line').value },
+          });
           load();
         } catch (e) {
           $('#err').textContent = e.message;
           btn.disabled = false;
-          btn.textContent = 'ฉันโอนเงินแล้ว';
+          btn.textContent = label;
         }
       });
     }
 
-    let lastStatus;
+    let lastKey;
     async function load() {
       try {
         const o = await api(`/api/orders/${encodeURIComponent(id)}?t=${encodeURIComponent(t || '')}`);
+        cfg = await shopConfig;
+        if (o.serverTime) clockOffset = Date.parse(o.serverTime) - Date.now();
         // ไม่ render ใหม่ถ้าสถานะเดิม (กันช่องหมายเหตุที่กำลังพิมพ์หาย)
-        if (o.status !== lastStatus) { lastStatus = o.status; render(o); }
+        const key = o.status + (o.qr ? ':qr' : '');
+        if (key !== lastKey) { lastKey = key; render(o); }
         clearTimeout(timer);
-        if (!['completed', 'cancelled'].includes(o.status)) timer = setTimeout(load, 10000);
+        if (!FINAL.includes(o.status)) timer = setTimeout(load, 10000);
       } catch (e) {
         $('#app').innerHTML = `<div class="card"><p class="error">${esc(e.message)}</p><a href="/">กลับหน้าแรก</a></div>`;
       }
