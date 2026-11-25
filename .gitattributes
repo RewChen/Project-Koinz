@@ -1,0 +1,7 @@
+# ไฟล์ที่รันใน container (Linux) ต้องเป็น LF เสมอ แม้ checkout บน Windows
+*.sh text eol=lf
+docker/** text eol=lf
+Dockerfile text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.sql text eol=lf

@@ -1,0 +1,10 @@
+# prod — docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+services:
+  app:
+    build:
+      target: prod
+    image: koinz-app:prod
+    environment:
+      NODE_ENV: production # บังคับ — กันบรรทัด NODE_ENV= ว่างใน .env ทับค่าใน image
+    ports:
+      - "3000:3000"

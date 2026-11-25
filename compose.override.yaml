@@ -1,0 +1,13 @@
+# dev — Compose โหลดไฟล์นี้อัตโนมัติเมื่อรัน `docker compose up`
+services:
+  app:
+    build:
+      target: dev
+    image: koinz-app:dev
+    # node --watch ไม่เห็นการแก้ไฟล์จากไดรฟ์ Windows → ใช้ตัว poll ของเราเอง (ไฟล์ใน public/ เห็นผลทันทีอยู่แล้ว)
+    command: ["node", "docker/dev-watch.js"]
+    volumes:
+      - ./:/app # แก้โค้ดบนเครื่องแล้วเห็นผลใน container ทันที
+      - /app/node_modules # ใช้ node_modules ใน container ไม่ใช่ของเครื่อง
+    ports:
+      - "3000:3000"

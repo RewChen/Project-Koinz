@@ -1,0 +1,21 @@
+# ไฟล์หลัก ใช้ร่วมกันทั้ง dev และ prod
+#   dev : docker compose up --build              (โหลด compose.override.yaml อัตโนมัติ)
+#   prod: docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+name: koinz
+
+services:
+  app:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # ค่าที่ต้องตรงกับ container เสมอ (กันค่าจาก .env สำหรับรันบนเครื่องหลุดเข้ามา)
+      PORT: "3000"
+      KOINZ_DATA_DIR: /app/data
+    restart: unless-stopped
+    volumes:
+      - koinz-data:/app/data
+
+volumes:
+  koinz-data:
