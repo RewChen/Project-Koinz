@@ -8,9 +8,13 @@ const store = require('./store');
 const catalog = require('./catalog');
 const orders = require('./orders');
 const adapters = require('./adapters');
+const security = require('./security');
 const { promptPayPayload } = require('./promptpay');
 
 const fail = (res, code, error) => res.status(code).json({ error });
+const baht = (n) => '฿' + Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 });
+const satang = (n) => Math.round(Number(n) * 100);
+const orderLine = (o) => `${o.id} · ${o.gameName} ${o.packageName} · ${o.playerLabel || o.playerId || ''} · ${baht(o.amount)}`;
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const text = (v, max) => String(v ?? '').trim().slice(0, max);
 
@@ -28,7 +32,12 @@ function sendTransitionError(res, e) {
 
 function createApp() {
   const app = express();
-  app.use(express.json({ limit: '200kb' }));
+  app.disable('x-powered-by');
+  if (config.trustProxy !== undefined) app.set('trust proxy', config.trustProxy);
+  app.use(security.securityHeaders);
+  app.use('/api', security.cors);
+  // เก็บ raw body ไว้ตรวจลายเซ็น webhook
+  app.use(express.json({ limit: '200kb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
   // ---------- public API ----------
@@ -53,7 +62,7 @@ function createApp() {
     res.json(catalog.publicGame(game));
   });
 
-  app.post('/api/player/lookup', wrap(async (req, res) => {
+  app.post('/api/player/lookup', security.limits.lookup, wrap(async (req, res) => {
     const { gameSlug, playerInputs } = req.body || {};
     const game = catalog.findGame(gameSlug);
     if (!game) return fail(res, 400, 'ไม่พบเกมที่เลือก');
@@ -68,7 +77,7 @@ function createApp() {
     }
   }));
 
-  app.post('/api/orders', wrap(async (req, res) => {
+  app.post('/api/orders', security.limits.createOrder, wrap(async (req, res) => {
     const body = req.body || {};
     const key = body.idempotencyKey;
     const hasKey = key !== undefined && key !== null && key !== '';
@@ -139,7 +148,31 @@ function createApp() {
     res.json(data);
   }));
 
-  app.post('/api/orders/:id/notify', (req, res) => {
+  // SSE: push สถานะทันทีที่เปลี่ยน (ไม่ poll ฐานข้อมูล)
+  app.get('/api/orders/:id/events', (req, res) => {
+    const order = findOrderForCustomer(req, res);
+    if (!order) return;
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const send = (status, updatedAt) => res.write(`event: status\ndata: ${JSON.stringify({ status, updatedAt })}\n\n`);
+    res.write('retry: 5000\n\n');
+    send(order.status, order.updatedAt);
+    const onStatus = (id, to, o) => {
+      if (id === order.id) send(to, o && o.updatedAt);
+    };
+    orders.bus.on('status', onStatus);
+    const ping = setInterval(() => res.write(': ping\n\n'), 25000);
+    req.on('close', () => {
+      clearInterval(ping);
+      orders.bus.off('status', onStatus);
+    });
+  });
+
+  app.post('/api/orders/:id/notify', security.limits.notify, (req, res) => {
     const order = findOrderForCustomer(req, res);
     if (!order) return;
     try {
@@ -153,14 +186,63 @@ function createApp() {
       }
       return sendTransitionError(res, e);
     }
+    const note = text(req.body.note, 200);
+    adapters.sendAlert(
+      `💸 ลูกค้าแจ้งโอน${order.status === 'expired' ? ' (หลังหมดเวลา)' : ''} รอตรวจยอด: ${orderLine(order)}${note ? ` · หมายเหตุ: ${note}` : ''}`
+    );
     res.json({ ok: true });
+  });
+
+  // ---------- webhook ยืนยันการชำระเงิน ----------
+  app.post('/api/webhooks/payment', (req, res) => {
+    if (!config.webhookEnabled) return fail(res, 404, 'ไม่พบ API นี้');
+    const sig = String(req.get('x-payment-signature') || '').trim().replace(/^sha256=/i, '').toLowerCase();
+    const expected = crypto.createHmac('sha256', config.paymentWebhookSecret).update(req.rawBody || Buffer.alloc(0)).digest('hex');
+    if (!/^[0-9a-f]{64}$/.test(sig) || !crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) {
+      return fail(res, 401, 'ลายเซ็นไม่ถูกต้อง');
+    }
+
+    const b = req.body || {};
+    const orderId = String(b.orderId ?? b.orderNumber ?? '').trim();
+    const paymentRef = String(b.paymentRef ?? b.paymentReference ?? '').trim().slice(0, 100);
+    const amount = Number(b.amount);
+    if (!orderId || !paymentRef || !Number.isFinite(amount)) {
+      return fail(res, 400, 'ต้องมี orderId, amount และ paymentRef');
+    }
+
+    const all = orders.all();
+    if (all.some((o) => o.paymentRef === paymentRef)) return res.json({ received: true, duplicate: true });
+    const order = all.find((o) => o.id === orderId);
+    if (!order) return fail(res, 404, 'ไม่พบออเดอร์');
+
+    if (satang(amount) !== satang(order.amount)) {
+      adapters.sendAlert(`⚠️ ยอดโอนไม่ตรง: ${orderLine(order)} แต่ได้รับ ${baht(amount)} (ref ${paymentRef})`);
+      return fail(res, 409, 'ยอดเงินไม่ตรงกับออเดอร์');
+    }
+    if (['paid', 'processing', 'completed'].includes(order.status)) {
+      return res.json({ received: true, duplicate: true });
+    }
+    if (!['pending_payment', 'paid_pending_review', 'expired'].includes(order.status)) {
+      adapters.sendAlert(`🚨 ได้รับเงินของออเดอร์สถานะ "${order.status}" ต้องคืนเงินลูกค้า: ${orderLine(order)} (ref ${paymentRef})`);
+      return fail(res, 409, `ออเดอร์อยู่ในสถานะ ${order.status} รับชำระไม่ได้`);
+    }
+    try {
+      orders.transition(order.id, 'paid', 'webhook', {
+        from: ['pending_payment', 'paid_pending_review', 'expired'],
+        patch: { paymentRef, paidAt: new Date().toISOString() },
+      });
+    } catch (e) {
+      if (e instanceof orders.TransitionError && e.code === 'conflict') return res.json({ received: true, duplicate: true });
+      throw e;
+    }
+    res.json({ received: true });
   });
 
   // ---------- admin API ----------
   const sessions = new Map(); // token -> expires
   const SESSION_MS = 8 * 60 * 60 * 1000;
 
-  app.post('/api/admin/login', (req, res) => {
+  app.post('/api/admin/login', security.limits.login, (req, res) => {
     if (!safeEqual((req.body && req.body.password) || '', config.adminPassword)) {
       return fail(res, 401, 'รหัสผ่านไม่ถูกต้อง');
     }
@@ -186,7 +268,8 @@ function createApp() {
   app.post('/api/admin/orders/:id/status', requireAdmin, (req, res) => {
     const { status, note } = req.body || {};
     try {
-      orders.transition(req.params.id, status, 'admin', { note: text(note, 200) });
+      const patch = status === 'paid' ? { paidAt: new Date().toISOString() } : undefined;
+      orders.transition(req.params.id, status, 'admin', { note: text(note, 200), patch });
     } catch (e) {
       return sendTransitionError(res, e);
     }

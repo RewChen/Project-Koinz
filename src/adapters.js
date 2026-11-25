@@ -1,4 +1,4 @@
-// เชื่อมต่อบริการภายนอก: ตรวจชื่อในเกม
+// เชื่อมต่อบริการภายนอก: ตรวจชื่อในเกม, supplier เติมเกม, แจ้งเตือนแอดมิน
 const crypto = require('crypto');
 const config = require('./config');
 
@@ -46,4 +46,54 @@ async function lookupNickname(game, inputs) {
   throw new AdapterError(404, 'ระบบตรวจชื่อในเกมยังไม่เปิดใช้งาน');
 }
 
-module.exports = { AdapterError, lookupEnabled, lookupNickname };
+// สั่งเติมผ่าน supplier → { supplierRef } หรือ throw Error (ข้อความเก็บใน job.lastError)
+// ถือว่าสำเร็จเฉพาะเมื่อ supplier ตอบ 2xx และไม่ได้บอกว่ายังรอ/ล้มเหลว
+async function fulfillTopup(order, sku) {
+  let res;
+  try {
+    res = await fetch(`${config.supplierApiUrl}/topups`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${config.supplierApiKey}`,
+        'idempotency-key': order.id,
+      },
+      body: JSON.stringify({ sku, player: order.playerInputs, reference: order.id }),
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch (e) {
+    throw new Error(`เชื่อมต่อ supplier ไม่ได้: ${e.name === 'TimeoutError' ? 'หมดเวลา 20 วินาที' : e.message}`);
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`supplier ตอบ HTTP ${res.status}${data && data.error ? `: ${data.error}` : ''}`);
+  const status = String((data && data.status) || 'success').toLowerCase();
+  if (!['success', 'succeeded', 'completed', 'ok'].includes(status)) {
+    throw new Error(`supplier ยังไม่ยืนยันการเติม (status: ${status})`);
+  }
+  const ref = data.reference || data.supplierRef || data.id || data.transactionId || null;
+  return { supplierRef: ref === null ? null : String(ref).slice(0, 100) };
+}
+
+// แจ้งเตือนแอดมิน (Discord ใช้ content, Slack ใช้ text) — ไม่ throw เด็ดขาด
+async function sendAlert(text) {
+  const message = `[${config.shopName}] ${text}`;
+  if (!config.adminAlertWebhook) {
+    console.log('🔔', message);
+    return false;
+  }
+  try {
+    const res = await fetch(config.adminAlertWebhook, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: message, text: message }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) console.error(`ส่งแจ้งเตือนไม่สำเร็จ: HTTP ${res.status}`);
+    return res.ok;
+  } catch (e) {
+    console.error('ส่งแจ้งเตือนไม่สำเร็จ:', e.message);
+    return false;
+  }
+}
+
+module.exports = { AdapterError, lookupEnabled, lookupNickname, fulfillTopup, sendAlert };

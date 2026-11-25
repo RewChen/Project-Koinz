@@ -118,22 +118,47 @@
       });
     }
 
-    let lastKey;
+    let lastKey, currentStatus, live;
+    const query = `?t=${encodeURIComponent(t || '')}`;
+
     async function load() {
       try {
-        const o = await api(`/api/orders/${encodeURIComponent(id)}?t=${encodeURIComponent(t || '')}`);
+        const o = await api(`/api/orders/${encodeURIComponent(id)}${query}`);
         cfg = await shopConfig;
+        currentStatus = o.status;
         if (o.serverTime) clockOffset = Date.parse(o.serverTime) - Date.now();
         // ไม่ render ใหม่ถ้าสถานะเดิม (กันช่องหมายเหตุที่กำลังพิมพ์หาย)
         const key = o.status + (o.qr ? ':qr' : '');
         if (key !== lastKey) { lastKey = key; render(o); }
-        clearTimeout(timer);
-        if (!FINAL.includes(o.status)) timer = setTimeout(load, 10000);
+        if (FINAL.includes(o.status)) stopUpdates();
+        return o;
       } catch (e) {
+        stopUpdates();
         $('#app').innerHTML = `<div class="card"><p class="error">${esc(e.message)}</p><a href="/">กลับหน้าแรก</a></div>`;
       }
     }
-    load();
+
+    function stopUpdates() {
+      if (live) { live.close(); live = null; }
+      clearInterval(timer);
+    }
+
+    // อัปเดตแบบ real-time ด้วย SSE ถ้าหลุดค่อยถอยไป poll ทุก 10 วินาที
+    function startUpdates() {
+      if (!window.EventSource) return (timer = setInterval(load, 10000));
+      live = new EventSource(`/api/orders/${encodeURIComponent(id)}/events${query}`);
+      live.addEventListener('status', (e) => {
+        const { status } = JSON.parse(e.data);
+        if (status !== currentStatus) load();
+      });
+      live.onerror = () => {
+        stopUpdates();
+        load();
+        timer = setInterval(load, 10000);
+      };
+    }
+
+    load().then((o) => { if (o && !FINAL.includes(o.status)) startUpdates(); });
   </script>
 </body>
 </html>

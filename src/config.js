@@ -31,13 +31,50 @@ const config = {
   lookupApiKey: str(env.LOOKUP_API_KEY),
   lookupMock: bool(env.LOOKUP_MOCK),
 
+  // ยืนยันการชำระเงินอัตโนมัติ
+  paymentWebhookSecret: str(env.PAYMENT_WEBHOOK_SECRET),
+
   // เติมอัตโนมัติผ่าน supplier
   supplierApiUrl: str(env.SUPPLIER_API_URL).replace(/\/+$/, ''),
   supplierApiKey: str(env.SUPPLIER_API_KEY),
+  fulfillAttempts: Math.max(1, Math.floor(num(env.FULFILL_ATTEMPTS, 3))),
+  fulfillRetryBaseSeconds: Math.max(0, num(env.FULFILL_RETRY_BASE_SECONDS, 3)),
+
+  // แจ้งเตือนแอดมิน (Discord / Slack webhook)
+  adminAlertWebhook: str(env.ADMIN_ALERT_WEBHOOK),
+
+  // ความปลอดภัย / deploy
+  frontendOrigins: str(env.FRONTEND_ORIGIN)
+    .split(',')
+    .map((s) => s.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
+  trustProxy: parseTrustProxy(str(env.TRUST_PROXY)),
+  rateLimitOff: bool(env.RATE_LIMIT_OFF),
 };
+
+// TRUST_PROXY: ว่าง = ไม่ตั้ง, ตัวเลข = จำนวน proxy, true/false, หรือค่าอื่นของ Express เช่น loopback
+function parseTrustProxy(v) {
+  if (!v) return undefined;
+  if (/^\d+$/.test(v)) return Number(v);
+  if (/^(true|false)$/i.test(v)) return v.toLowerCase() === 'true';
+  return v;
+}
 
 config.isProduction = config.nodeEnv === 'production';
 config.lookupEnabled = !!config.lookupApiUrl || config.lookupMock;
 config.autoFulfill = !!(config.supplierApiUrl && config.supplierApiKey);
+config.webhookEnabled = !!config.paymentWebhookSecret;
+
+// ปัญหาที่ทำให้ไม่ควร start บน production
+config.startupProblems = () => {
+  const problems = [];
+  if (config.isProduction) {
+    const weak = ['admin1234', 'change-me-please'];
+    if (!config.adminPasswordSet || weak.includes(config.adminPassword) || config.adminPassword.length < 12) {
+      problems.push('ADMIN_PASSWORD ต้องตั้งเอง และยาวอย่างน้อย 12 ตัวอักษร (ห้ามใช้ค่าตัวอย่าง)');
+    }
+  }
+  return problems;
+};
 
 module.exports = config;
