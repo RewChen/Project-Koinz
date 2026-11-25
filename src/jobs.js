@@ -48,6 +48,8 @@ function enqueueFulfill(orderId) {
   return result;
 }
 
+const activeJobFor = (orderId) => allJobs().find((j) => j.orderId === orderId && !j.done) || null;
+
 const finish = (job, result, patch = {}) => updateJob(job.id, { done: true, result, finishedAt: nowIso(), ...patch });
 
 async function runFulfill(job) {
@@ -157,4 +159,4 @@ function stop() {
   timers = [];
 }
 
-module.exports = { start, stop, enqueueFulfill, sweepExpired, tick };
+module.exports = { start, stop, enqueueFulfill, activeJobFor, allJobs, sweepExpired, tick };

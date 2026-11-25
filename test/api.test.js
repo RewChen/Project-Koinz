@@ -569,3 +569,129 @@ describe('Phase 2 — security', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+describe('Phase 3 — หลังบ้าน', () => {
+  let s, sup, auth;
+  let supplierFails = false;
+  before(async () => {
+    sup = await fakeServer((app) =>
+      app.post('/topups', (req, res) => (supplierFails ? res.status(500).json({}) : res.json({ status: 'success', reference: 'SUP-' + req.body.reference })))
+    );
+    s = await startServer({
+      SUPPLIER_API_URL: sup.url, SUPPLIER_API_KEY: 'sk_test', FULFILL_RETRY_BASE_SECONDS: '0.1', FULFILL_ATTEMPTS: '2', LOOKUP_MOCK: '1',
+    });
+    auth = await adminAuth(s);
+  });
+  after(async () => { await s.stop(); await sup.close(); });
+
+  const statusOf = (id) => s.readData('orders').find((o) => o.id === id).status;
+
+  test('ต้อง login ทุก API และ logout แล้ว token ใช้ไม่ได้', async () => {
+    for (const url of ['/api/admin/stats', '/api/admin/orders', '/api/admin/games']) {
+      assert.equal((await s.req('GET', url)).status, 401);
+    }
+    const temp = await adminAuth(s);
+    assert.equal((await s.req('GET', '/api/admin/stats', undefined, temp)).status, 200);
+    await s.req('POST', '/api/admin/logout', undefined, temp);
+    assert.equal((await s.req('GET', '/api/admin/stats', undefined, temp)).status, 401);
+  });
+
+  test('ค้นหาด้วยเลข UID / LINE / เลขออเดอร์ แล้วเจอ และกรองตามสถานะได้', async () => {
+    const { id, token } = (await s.req('POST', '/api/orders', mlOrder({ playerInputs: { uid: '777123456', zone: '4321' } }))).body;
+    await s.req('POST', `/api/orders/${id}/notify`, { t: token, lineId: 'line_findme' });
+
+    let r = await s.req('GET', '/api/admin/orders?q=777123456', undefined, auth);
+    assert.deepEqual(r.body.map((o) => o.id), [id]);
+    assert.ok(!('token' in r.body[0]));
+    r = await s.req('GET', '/api/admin/orders?q=LINE_FINDME', undefined, auth);
+    assert.deepEqual(r.body.map((o) => o.id), [id]);
+    r = await s.req('GET', `/api/admin/orders?q=${id.toLowerCase()}`, undefined, auth);
+    assert.deepEqual(r.body.map((o) => o.id), [id]);
+    r = await s.req('GET', '/api/admin/orders?q=777123456&status=paid_pending_review', undefined, auth);
+    assert.equal(r.body.length, 1);
+    r = await s.req('GET', '/api/admin/orders?q=777123456&status=completed', undefined, auth);
+    assert.equal(r.body.length, 0);
+    r = await s.req('GET', '/api/admin/orders?q=ไม่มีแน่นอน', undefined, auth);
+    assert.equal(r.body.length, 0);
+  });
+
+  test('กด "ยืนยันยอดเข้าแล้ว" ตอนเปิด supplier → autoFulfillQueued และจบ completed เอง', async () => {
+    const { id, token } = (await s.req('POST', '/api/orders', mlOrder())).body;
+    await s.req('POST', `/api/orders/${id}/notify`, { t: token });
+    const r = await s.req('POST', `/api/admin/orders/${id}/status`, { status: 'paid', note: 'เช็คยอดในแอปแล้ว' }, auth);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.autoFulfillQueued, true);
+    assert.ok(await waitFor(() => statusOf(id) === 'completed', 5000));
+
+    // audit แสดงครบทุกการเปลี่ยนสถานะ พร้อมผู้ทำ
+    const audit = (await s.req('GET', `/api/admin/orders/${id}/audit`, undefined, auth)).body;
+    assert.deepEqual(audit.map((a) => [a.from || null, a.to, a.actor]), [
+      [null, 'pending_payment', 'customer'],
+      ['pending_payment', 'paid_pending_review', 'customer'],
+      ['paid_pending_review', 'paid', 'admin'],
+      ['paid', 'processing', 'system'],
+      ['processing', 'completed', 'system'],
+    ]);
+    assert.equal(audit[2].note, 'เช็คยอดในแอปแล้ว');
+    assert.equal((await s.req('GET', '/api/admin/orders/NOPE/audit', undefined, auth)).status, 404);
+  });
+
+  test('stats: นับตามสถานะ + ยอดขายวันนี้ + ป้ายโหมด', async () => {
+    const st = (await s.req('GET', '/api/admin/stats', undefined, auth)).body;
+    const orders = s.readData('orders');
+    for (const status of ['pending_payment', 'paid_pending_review', 'completed']) {
+      assert.equal(st.byStatus[status], orders.filter((o) => o.status === status).length, status);
+    }
+    const completed = orders.filter((o) => o.status === 'completed').reduce((a, o) => a + o.amount, 0);
+    assert.equal(st.revenueToday, completed);
+    assert.ok(st.revenueToday > 0);
+    assert.deepEqual([st.autoFulfill, st.webhookEnabled, st.lookupEnabled], [true, false, true]);
+  });
+
+  test('เติมไม่สำเร็จ → refund_needed → "เติมใหม่" → completed', async () => {
+    supplierFails = true;
+    const { id } = (await s.req('POST', '/api/orders', mlOrder())).body;
+    await s.req('POST', `/api/admin/orders/${id}/status`, { status: 'paid' }, auth);
+    assert.ok(await waitFor(() => statusOf(id) === 'refund_needed', 5000));
+
+    let r = await s.req('POST', `/api/admin/orders/${id}/retry`, {}, auth);
+    supplierFails = false;
+    assert.equal(r.status, 200);
+    assert.equal(r.body.autoFulfillQueued, true);
+    assert.ok(await waitFor(() => statusOf(id) === 'completed', 5000));
+    assert.equal(s.readData('orders').find((o) => o.id === id).supplierRef, 'SUP-' + id);
+
+    r = await s.req('POST', `/api/admin/orders/${id}/retry`, {}, auth);
+    assert.equal(r.status, 400); // completed แล้ว สั่งเติมใหม่ไม่ได้
+  });
+
+  test('บันทึกเกมที่ id แพ็กเกจซ้ำ → error บอกชื่อแพ็กที่ซ้ำ / ถูกต้อง → บันทึก + audit', async () => {
+    const games = (await s.req('GET', '/api/admin/games', undefined, auth)).body;
+    assert.ok(games[0].packages[0].sku, 'หลังบ้านต้องเห็น sku');
+    const dup = structuredClone(games);
+    dup[1].packages[0].id = 'rov-2';
+    let r = await s.req('PUT', '/api/admin/games', dup, auth);
+    assert.equal(r.status, 400);
+    assert.match(r.body.error, /เพชร 86/);
+    assert.match(r.body.error, /rov-2/);
+    assert.match(r.body.error, /Garena RoV/);
+
+    const bad = structuredClone(games);
+    bad[2].fields[0].pattern = '[';
+    r = await s.req('PUT', '/api/admin/games', bad, auth);
+    assert.match(r.body.error, /Genshin Impact/);
+
+    const priced = structuredClone(games);
+    priced[0].packages[0].price = 10.555;
+    r = await s.req('PUT', '/api/admin/games', priced, auth);
+    assert.match(r.body.error, /ทศนิยม/);
+
+    const ok = structuredClone(games);
+    ok[0].packages[0].price = 36;
+    r = await s.req('PUT', '/api/admin/games', ok, auth);
+    assert.equal(r.status, 200);
+    assert.equal((await s.req('GET', '/api/games/rov')).body.packages[0].price, 36);
+    assert.ok(s.readData('audit').some((a) => a.action === 'games_update' && a.actor === 'admin'));
+  });
+});

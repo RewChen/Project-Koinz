@@ -193,6 +193,30 @@ input:focus, select:focus, textarea:focus { border-color: var(--gold); outline: 
 .admin .toolbar select { width: auto; }
 .admin textarea { min-height: 420px; font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
 .table-scroll { overflow-x: auto; }
+.admin .toolbar input[type="search"] { flex: 1 1 260px; width: auto; }
+.admin .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 10px; }
+.admin .stat { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font: inherit; text-align: left; cursor: pointer; }
+.admin .stat:disabled { cursor: default; }
+.admin .stat b { font-family: var(--head); font-size: 1.6rem; font-weight: 500; color: var(--ink); }
+.admin .stat:not(:disabled):hover { border-color: var(--gold); }
+.admin .modes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.admin .mode { padding: 3px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+.admin .mode.on { border-color: var(--mint); color: var(--mint); }
+.admin-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.admin-grid:has(.detail:not([hidden])) { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
+.admin .detail { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
+.admin .detail-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.admin .detail dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 14px 0; }
+.admin .detail dt { color: var(--muted); }
+.admin .detail dd { margin: 0; overflow-wrap: anywhere; }
+.admin .detail summary { cursor: pointer; color: var(--muted); margin: 8px 0; }
+.admin .audit li { font-size: .9rem; }
+.admin .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin tr.open td { background: var(--panel-2); }
+@media (max-width: 960px) {
+  .admin-grid:has(.detail:not([hidden])) { grid-template-columns: 1fr; }
+  .admin .detail { position: static; max-height: none; }
+}
 .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
 .tabs button[aria-selected="true"] { border-color: var(--gold); color: var(--gold); }
 

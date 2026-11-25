@@ -23,8 +23,12 @@
   <script>
     let token = sessionStorage.getItem('koinz_admin') || '';
     const auth = () => ({ Authorization: 'Bearer ' + token });
+    const REFRESH_MS = 15000;
+    const ACTOR = { customer: 'ลูกค้า', admin: 'แอดมิน', webhook: 'ระบบชำระเงิน', system: 'ระบบ' };
+    let stats = {}, gamesBySlug = {}, current = new Map(), openId = null, refreshTimer;
 
     function showLogin(msg = '') {
+      clearInterval(refreshTimer);
       $('#logout').hidden = true;
       $('#app').innerHTML = `
         <form class="card" id="login" style="max-width:380px;margin:40px auto">
@@ -45,83 +49,278 @@
       });
     }
 
+    function flash(msg, ok = false) {
+      const el = $('#flash');
+      if (!el) return;
+      el.textContent = msg;
+      el.style.color = ok ? 'var(--mint)' : '';
+    }
+
     async function guarded(fn) {
       try { return await fn(); }
       catch (e) {
         if (/เข้าสู่ระบบ/.test(e.message)) { sessionStorage.removeItem('koinz_admin'); showLogin(e.message); }
-        else alert(e.message);
+        else flash(e.message);
       }
     }
 
-    function showDashboard() {
+    // ---------- แดชบอร์ด ----------
+    async function showDashboard() {
       $('#logout').hidden = false;
       $('#app').innerHTML = `
+        <div class="stats" id="stats"></div>
         <div class="tabs" role="tablist">
           <button class="btn ghost small" role="tab" aria-selected="true" data-tab="orders">ออเดอร์</button>
           <button class="btn ghost small" role="tab" aria-selected="false" data-tab="games">เกมและราคา</button>
         </div>
+        <p class="error" id="flash" role="status"></p>
         <section id="tab"></section>`;
       document.querySelectorAll('[data-tab]').forEach((b) =>
         b.addEventListener('click', () => {
           document.querySelectorAll('[data-tab]').forEach((x) => x.setAttribute('aria-selected', x === b));
+          flash('');
           b.dataset.tab === 'orders' ? showOrders() : showGames();
         })
       );
+      guarded(async () => {
+        const games = await api('/api/admin/games', { headers: auth() });
+        gamesBySlug = Object.fromEntries(games.map((g) => [g.slug, g]));
+      });
+      await loadStats(); // ปุ่มลัดขึ้นกับโหมดเติมอัตโนมัติ
+      if (!$('#tab')) return; // session หมดอายุ → กลับไปหน้า login แล้ว
       showOrders();
+      clearInterval(refreshTimer);
+      refreshTimer = setInterval(() => {
+        if (document.hidden || !$('#stats')) return;
+        loadStats();
+        if ($('#rows')) loadOrders();
+      }, REFRESH_MS);
     }
 
-    async function showOrders() {
+    async function loadStats() {
+      await guarded(async () => {
+        stats = await api('/api/admin/stats', { headers: auth() });
+        const n = stats.byStatus;
+        const tile = (label, value, filter) => `
+          <button type="button" class="stat" ${filter ? `data-filter="${filter}"` : 'disabled'}>
+            <span>${label}</span><b>${value}</b>
+          </button>`;
+        const mode = (label, on) => `<span class="mode ${on ? 'on' : ''}">${label}: ${on ? 'เปิด' : 'ปิด'}</span>`;
+        $('#stats').innerHTML = `
+          <div class="tiles">
+            ${tile('รอตรวจยอด', n.paid_pending_review, 'paid_pending_review')}
+            ${tile('รอเติม / กำลังเติม', n.paid + n.processing, n.processing ? 'processing' : 'paid')}
+            ${tile('ต้องคืนเงิน', n.refund_needed, 'refund_needed')}
+            ${tile('ยอดขายวันนี้', baht(stats.revenueToday))}
+          </div>
+          <div class="modes">
+            ${mode('Webhook ชำระเงิน', stats.webhookEnabled)}
+            ${mode('เติมอัตโนมัติ (supplier)', stats.autoFulfill)}
+            ${mode('ตรวจชื่อในเกม', stats.lookupEnabled)}
+          </div>`;
+        document.querySelectorAll('.stat[data-filter]').forEach((b) =>
+          b.addEventListener('click', () => {
+            if (!$('#filter')) document.querySelector('[data-tab="orders"]').click();
+            setFilter(b.dataset.filter);
+          })
+        );
+      });
+    }
+
+    // ---------- ออเดอร์ ----------
+    function showOrders() {
+      openId = null;
       $('#tab').innerHTML = `
         <div class="toolbar">
-          <select id="filter">
+          <input id="q" type="search" placeholder="ค้นหา เลขออเดอร์ / UID / LINE / เลขอ้างอิง" aria-label="ค้นหาออเดอร์">
+          <select id="filter" aria-label="กรองสถานะ">
             <option value="">ทุกสถานะ</option>
             ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
           </select>
           <button class="btn ghost small" id="refresh">รีเฟรช</button>
           <span class="hint" id="count"></span>
         </div>
-        <div class="table-scroll card"><table>
-          <thead><tr><th>ออเดอร์</th><th>เกม / แพ็กเกจ</th><th>ผู้เล่น</th><th>ติดต่อ</th><th>ยอด</th><th>หมายเหตุ</th><th>สถานะ</th></tr></thead>
-          <tbody id="rows"></tbody>
-        </table></div>`;
-      $('#filter').value = sessionStorage.getItem('koinz_filter') || 'paid_pending_review';
-      $('#filter').addEventListener('change', () => { sessionStorage.setItem('koinz_filter', $('#filter').value); loadOrders(); });
-      $('#refresh').addEventListener('click', loadOrders);
+        <div class="admin-grid">
+          <div class="table-scroll card"><table>
+            <thead><tr><th>ออเดอร์</th><th>เกม / แพ็กเกจ</th><th>ผู้เล่น</th><th>ยอด</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table></div>
+          <aside class="card detail" id="detail" hidden></aside>
+        </div>`;
+      $('#filter').value = sessionStorage.getItem('koinz_filter') ?? 'paid_pending_review';
+      $('#filter').addEventListener('change', () => setFilter($('#filter').value));
+      let debounce;
+      $('#q').addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(loadOrders, 300); });
+      $('#refresh').addEventListener('click', () => { loadStats(); loadOrders(); });
       loadOrders();
     }
 
+    function setFilter(v) {
+      $('#filter').value = v;
+      sessionStorage.setItem('koinz_filter', v);
+      loadOrders();
+    }
+
+    // ปุ่มลัดตามสถานะ: [label, action, อันตราย(ต้องกดยืนยันซ้ำ)]
+    function actionsFor(o) {
+      const auto = stats.autoFulfill;
+      const A = [];
+      if (['pending_payment', 'paid_pending_review', 'expired'].includes(o.status)) {
+        A.push(['ยืนยันยอดเข้าแล้ว', 'status:paid'], ['ยกเลิก', 'status:cancelled', true]);
+      }
+      if (o.status === 'paid' && !auto) A.push(['เติมสำเร็จ', 'status:completed'], ['เติมไม่สำเร็จ', 'status:refund_needed', true]);
+      if (o.status === 'processing') {
+        if (auto) A.push(['เติมใหม่', 'retry']);
+        A.push(['เติมสำเร็จ', 'status:completed']);
+      }
+      if (o.status === 'refund_needed') {
+        A.push(auto ? ['เติมใหม่', 'retry'] : ['เติมสำเร็จแล้ว', 'status:completed'], ['คืนเงินแล้ว', 'status:refunded', true]);
+      }
+      return A;
+    }
+
+    const actionButtons = (o) => actionsFor(o).map(([label, act, danger]) =>
+      `<button type="button" class="btn small ${danger ? 'ghost' : ''}" data-act="${act}" data-id="${esc(o.id)}" ${danger ? 'data-danger' : ''}>${label}</button>`
+    ).join(' ');
+
     async function loadOrders() {
       await guarded(async () => {
-        const all = await api('/api/admin/orders', { headers: auth() });
-        const f = $('#filter').value;
-        const list = f ? all.filter((o) => o.status === f) : all;
+        const params = new URLSearchParams({ status: $('#filter').value, q: $('#q').value.trim() });
+        const list = await api('/api/admin/orders?' + params, { headers: auth() });
+        if (!$('#rows')) return;
+        current = new Map(list.map((o) => [o.id, o]));
         $('#count').textContent = `${list.length} รายการ`;
+        const searchAll = $('#q').value.trim() && $('#filter').value
+          ? ` <button type="button" class="btn ghost small" id="search-all">ค้นหาทุกสถานะ</button>` : '';
         $('#rows').innerHTML = list.length ? list.map((o) => `
-          <tr>
-            <td>${esc(o.id)}<br><span class="hint">${thaiTime(o.createdAt)}</span></td>
+          <tr data-row="${esc(o.id)}" class="${o.id === openId ? 'open' : ''}">
+            <td><a href="#" data-open="${esc(o.id)}">${esc(o.id)}</a><br><span class="hint">${thaiTime(o.createdAt)}</span></td>
             <td>${esc(o.gameName)}<br>${esc(o.packageName)}</td>
             <td><b>${esc(o.playerLabel || o.playerId)}</b>${o.playerNickname ? `<br>${esc(o.playerNickname)}` : ''}</td>
-            <td>${esc(o.contact || '')}${o.lineId ? `<br>LINE ${esc(o.lineId)}` : ''}</td>
             <td>${baht(o.amount)}</td>
-            <td>${esc(o.customerNote || '')}</td>
-            <td><select data-id="${esc(o.id)}" aria-label="สถานะของ ${esc(o.id)}">
-              ${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${k === o.status ? 'selected' : ''}>${v}</option>`).join('')}
-            </select></td>
-          </tr>`).join('') : `<tr><td colspan="7" class="empty">ไม่มีออเดอร์ในสถานะนี้</td></tr>`;
-        document.querySelectorAll('#rows select').forEach((s) =>
-          s.addEventListener('change', async () => {
-            await guarded(() => api(`/api/admin/orders/${encodeURIComponent(s.dataset.id)}/status`, { method: 'POST', headers: auth(), body: { status: s.value } }));
-            if ($('#rows')) loadOrders(); // โหลดใหม่ทั้งสำเร็จและไม่สำเร็จ ให้ dropdown ตรงกับสถานะจริง
-          })
+            <td><span class="badge ${esc(o.status)}">${STATUS[o.status] || esc(o.status)}</span></td>
+            <td class="actions">${actionButtons(o)}</td>
+          </tr>`).join('')
+          : `<tr><td colspan="6" class="empty">ไม่พบออเดอร์${searchAll}</td></tr>`;
+        if ($('#search-all')) $('#search-all').addEventListener('click', () => setFilter(''));
+        bindActions($('#rows'));
+        document.querySelectorAll('[data-open]').forEach((a) =>
+          a.addEventListener('click', (e) => { e.preventDefault(); openDetail(a.dataset.open); })
         );
+        // อัปเดตแผงรายละเอียดถ้าออเดอร์เปลี่ยน และแอดมินไม่ได้พิมพ์อะไรค้างอยู่
+        const o = openId && current.get(openId);
+        const note = $('#d-note');
+        if (o && note && o.updatedAt !== $('#detail').dataset.updated && !note.value) openDetail(openId);
       });
     }
 
+    function bindActions(root) {
+      root.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b)));
+    }
+
+    async function runAction(btn, note = '') {
+      // ปุ่มอันตรายต้องกดซ้ำภายใน 4 วินาที
+      if (btn.hasAttribute('data-danger') && !btn.dataset.armed) {
+        const label = btn.textContent;
+        btn.dataset.armed = '1';
+        btn.textContent = `กดอีกครั้งเพื่อ${label}`;
+        setTimeout(() => { delete btn.dataset.armed; btn.textContent = label; }, 4000);
+        return;
+      }
+      const id = btn.dataset.id;
+      const [kind, status] = btn.dataset.act.split(':');
+      btn.disabled = true;
+      await guarded(async () => {
+        const url = `/api/admin/orders/${encodeURIComponent(id)}/${kind === 'retry' ? 'retry' : 'status'}`;
+        const r = await api(url, { method: 'POST', headers: auth(), body: kind === 'retry' ? { note } : { status, note } });
+        flash(r.autoFulfillQueued
+          ? `${id}: ${kind === 'retry' ? 'สั่งเติมใหม่แล้ว' : STATUS[status]} — ระบบกำลังเติมอัตโนมัติ`
+          : `${id}: เปลี่ยนเป็น "${STATUS[status]}" แล้ว`, true);
+      });
+      btn.disabled = false;
+      await Promise.all([loadStats(), loadOrders()]);
+      if (openId === id) openDetail(id);
+    }
+
+    function inputRows(o) {
+      const game = gamesBySlug[o.gameSlug];
+      const label = (name) => ((game && game.fields || []).find((f) => f.name === name) || {}).label || name;
+      const entries = Object.entries(o.playerInputs || {});
+      if (!entries.length && o.playerId) return `<dt>UID</dt><dd>${esc(o.playerId)}</dd>${o.server ? `<dt>เซิร์ฟเวอร์</dt><dd>${esc(o.server)}</dd>` : ''}`;
+      return entries.map(([k, v]) => `<dt>${esc(label(k))}</dt><dd><b>${esc(v)}</b></dd>`).join('');
+    }
+
+    async function openDetail(id) {
+      openId = id;
+      document.querySelectorAll('[data-row]').forEach((tr) => tr.classList.toggle('open', tr.dataset.row === id));
+      const box = $('#detail');
+      // ออเดอร์อาจหลุดจากตัวกรองหลังเปลี่ยนสถานะ → ดึงด้วยเลขออเดอร์ เพื่อให้แผงยังเปิดอยู่
+      const o = current.get(id) || ((await guarded(() =>
+        api('/api/admin/orders?q=' + encodeURIComponent(id), { headers: auth() }))) || []).find((x) => x.id === id);
+      if (!o || openId !== id || !box) { if (box && openId === id) box.hidden = true; return; }
+      const audit = (await guarded(() => api(`/api/admin/orders/${encodeURIComponent(id)}/audit`, { headers: auth() }))) || [];
+      if (openId !== id) return;
+      const row = (k, v) => (v ? `<dt>${k}</dt><dd>${esc(v)}</dd>` : '');
+      const time = (v) => (v ? thaiTime(v) : '');
+      box.dataset.updated = o.updatedAt || '';
+      box.hidden = false;
+      box.innerHTML = `
+        <div class="detail-head">
+          <h2>${esc(o.id)}</h2>
+          <button type="button" class="btn ghost small" id="d-close" aria-label="ปิดรายละเอียด">ปิด</button>
+        </div>
+        <span class="badge ${esc(o.status)}">${STATUS[o.status] || esc(o.status)}</span>
+        <dl>
+          ${row('เกม', o.gameName)}${row('แพ็กเกจ', o.packageName)}
+          <dt>ยอด</dt><dd>${baht(o.amount)}</dd>
+          ${inputRows(o)}
+          <dt>ชื่อในเกม</dt><dd>${esc(o.playerNickname || '–')}</dd>
+          ${row('ติดต่อ', o.contact)}${row('LINE', o.lineId)}${row('หมายเหตุลูกค้า', o.customerNote)}
+          ${row('เลขอ้างอิงการโอน', o.paymentRef)}${row('เลขอ้างอิง supplier', o.supplierRef)}
+          ${row('สั่งเมื่อ', time(o.createdAt))}${row('หมดเวลาชำระ', time(o.expiresAt))}${row('ยืนยันยอดเมื่อ', time(o.paidAt))}
+        </dl>
+        <label for="d-note">หมายเหตุของแอดมิน (บันทึกใน audit)</label>
+        <input id="d-note" maxlength="200" autocomplete="off">
+        <p class="actions">${actionButtons(o)}</p>
+        <details>
+          <summary>เปลี่ยนสถานะเอง</summary>
+          <div class="toolbar">
+            <select id="d-status" aria-label="สถานะใหม่">
+              ${Object.entries(STATUS).filter(([k]) => k !== o.status).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
+            </select>
+            <button type="button" class="btn ghost small" id="d-set">บันทึกสถานะ</button>
+          </div>
+        </details>
+        <h3>ประวัติ (audit)</h3>
+        <ul class="timeline audit">
+          ${audit.map((a) => `
+            <li class="done">
+              <span>${a.from ? `${esc(STATUS[a.from] || a.from)} → ` : ''}${esc(STATUS[a.to] || a.to || a.action)}
+                <span class="hint">โดย ${esc(ACTOR[a.actor] || a.actor)}${a.note ? ` · ${esc(a.note)}` : ''}</span></span>
+              <time>${thaiTime(a.at)}</time>
+            </li>`).join('') || '<li>ยังไม่มีประวัติ</li>'}
+        </ul>`;
+      $('#d-close').addEventListener('click', () => {
+        openId = null;
+        box.hidden = true;
+        document.querySelectorAll('[data-row]').forEach((tr) => tr.classList.remove('open'));
+      });
+      box.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b, $('#d-note').value)));
+      $('#d-set').addEventListener('click', () => {
+        const b = $('#d-set');
+        b.dataset.id = id;
+        b.dataset.act = 'status:' + $('#d-status').value;
+        runAction(b, $('#d-note').value);
+      });
+    }
+
+    // ---------- เกมและราคา ----------
     async function showGames() {
+      openId = null;
       $('#tab').innerHTML = `
         <div class="card">
           <h2>เกมและราคา</h2>
-          <p class="hint">แก้ไขชื่อเกม แพ็กเกจ และราคาในรูปแบบ JSON แล้วกดบันทึก · ใส่ "active": false เพื่อซ่อนเกม</p>
+          <p class="hint">แก้ไขเกม ช่องข้อมูลผู้เล่น (fields) แพ็กเกจ และราคาในรูปแบบ JSON แล้วกดบันทึก · ใส่ "active": false เพื่อซ่อนเกมหรือแพ็กเกจ · sku และ cost ลูกค้าไม่เห็น</p>
           <textarea id="json" spellcheck="false"></textarea>
           <p class="error" id="gerr" role="alert"></p>
           <button class="btn small" id="save">บันทึกเกมและราคา</button>
@@ -135,13 +334,23 @@
         try { data = JSON.parse($('#json').value); } catch { return ($('#gerr').textContent = 'รูปแบบ JSON ไม่ถูกต้อง ตรวจเครื่องหมายจุลภาคและวงเล็บ'); }
         try {
           await api('/api/admin/games', { method: 'PUT', headers: auth(), body: data });
+          gamesBySlug = Object.fromEntries(data.map((g) => [g.slug, g]));
           $('#gerr').style.color = 'var(--mint)';
           $('#gerr').textContent = 'บันทึกเกมและราคาแล้ว';
-        } catch (e) { $('#gerr').style.color = ''; $('#gerr').textContent = e.message; }
+        } catch (e) {
+          if (/เข้าสู่ระบบ/.test(e.message)) throw e;
+          $('#gerr').style.color = '';
+          $('#gerr').textContent = e.message;
+        }
       }));
     }
 
-    $('#logout').addEventListener('click', () => { sessionStorage.removeItem('koinz_admin'); token = ''; showLogin(); });
+    $('#logout').addEventListener('click', async () => {
+      await api('/api/admin/logout', { method: 'POST', headers: auth() }).catch(() => {});
+      sessionStorage.removeItem('koinz_admin');
+      token = '';
+      showLogin();
+    });
     token ? showDashboard() : showLogin();
   </script>
 </body>

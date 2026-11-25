@@ -9,11 +9,14 @@ const catalog = require('./catalog');
 const orders = require('./orders');
 const adapters = require('./adapters');
 const security = require('./security');
+const jobs = require('./jobs');
 const { promptPayPayload } = require('./promptpay');
 
 const fail = (res, code, error) => res.status(code).json({ error });
 const baht = (n) => '฿' + Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 });
 const satang = (n) => Math.round(Number(n) * 100);
+// วันที่ตามเวลาไทย (UTC+7 ไม่มี daylight saving) รูปแบบ YYYY-MM-DD
+const thaiDate = (ms) => new Date(ms + 7 * 3600000).toISOString().slice(0, 10);
 const orderLine = (o) => `${o.id} · ${o.gameName} ${o.packageName} · ${o.playerLabel || o.playerId || ''} · ${baht(o.amount)}`;
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const text = (v, max) => String(v ?? '').trim().slice(0, max);
@@ -261,8 +264,51 @@ function createApp() {
     next();
   }
 
+  app.post('/api/admin/logout', (req, res) => {
+    sessions.delete((req.headers.authorization || '').replace(/^Bearer /, ''));
+    res.json({ ok: true });
+  });
+
+  app.get('/api/admin/stats', requireAdmin, (req, res) => {
+    const byStatus = Object.fromEntries(orders.STATUSES.map((s) => [s, 0]));
+    const today = thaiDate(Date.now());
+    let revenueToday = 0;
+    for (const o of orders.all()) {
+      byStatus[o.status] = (byStatus[o.status] || 0) + 1;
+      if (o.status !== 'completed') continue;
+      const done = (o.history || []).filter((h) => h.status === 'completed').at(-1);
+      if (done && thaiDate(Date.parse(done.at)) === today) revenueToday += satang(o.amount);
+    }
+    res.json({
+      byStatus,
+      revenueToday: revenueToday / 100,
+      autoFulfill: config.autoFulfill,
+      webhookEnabled: config.webhookEnabled,
+      lookupEnabled: config.lookupEnabled,
+    });
+  });
+
   app.get('/api/admin/orders', requireAdmin, (req, res) => {
-    res.json(orders.all().reverse().map(orders.adminView));
+    const status = text(req.query.status, 40);
+    const q = text(req.query.q, 100).toLowerCase();
+    const list = [];
+    const all = orders.all();
+    for (let i = all.length - 1; i >= 0 && list.length < 500; i--) {
+      const o = all[i];
+      if (status && o.status !== status) continue;
+      if (q) {
+        const hay = [o.id, o.playerLabel, o.playerId, o.playerNickname, o.contact, o.lineId, o.paymentRef, o.supplierRef,
+          ...Object.values(o.playerInputs || {})];
+        if (!hay.some((v) => v && String(v).toLowerCase().includes(q))) continue;
+      }
+      list.push(orders.adminView(o));
+    }
+    res.json(list);
+  });
+
+  app.get('/api/admin/orders/:id/audit', requireAdmin, (req, res) => {
+    if (!orders.find(req.params.id)) return fail(res, 404, 'ไม่พบออเดอร์');
+    res.json(orders.auditFor(req.params.id));
   });
 
   app.post('/api/admin/orders/:id/status', requireAdmin, (req, res) => {
@@ -273,7 +319,28 @@ function createApp() {
     } catch (e) {
       return sendTransitionError(res, e);
     }
-    res.json({ ok: true });
+    res.json({ ok: true, autoFulfillQueued: !!jobs.activeJobFor(req.params.id) });
+  });
+
+  // สั่งเติมใหม่ผ่าน supplier
+  app.post('/api/admin/orders/:id/retry', requireAdmin, (req, res) => {
+    if (!config.autoFulfill) return fail(res, 400, 'ยังไม่ได้เปิดระบบเติมอัตโนมัติ (SUPPLIER_API_URL / SUPPLIER_API_KEY)');
+    const order = orders.find(req.params.id);
+    if (!order) return fail(res, 404, 'ไม่พบออเดอร์');
+    if (!['paid', 'processing', 'refund_needed'].includes(order.status)) {
+      return fail(res, 400, 'สั่งเติมใหม่ได้เฉพาะออเดอร์ที่ยืนยันยอดแล้ว กำลังเติม หรือรอคืนเงิน');
+    }
+    try {
+      if (order.status === 'refund_needed') {
+        // เปลี่ยนกลับเป็น paid → ระบบเข้าคิวให้เอง
+        orders.transition(order.id, 'paid', 'admin', { from: 'refund_needed', note: text(req.body && req.body.note, 200) || 'สั่งเติมใหม่' });
+      }
+    } catch (e) {
+      return sendTransitionError(res, e);
+    }
+    const job = jobs.activeJobFor(order.id) || jobs.enqueueFulfill(order.id).job;
+    orders.audit({ orderId: order.id, action: 'retry', actor: 'admin', note: `งาน ${job.id}` });
+    res.json({ ok: true, autoFulfillQueued: true, jobId: job.id });
   });
 
   app.get('/api/admin/games', requireAdmin, (req, res) => res.json(catalog.getGames()));
