@@ -68,8 +68,10 @@ LINE_LOGIN_ENABLED=0
 หมายเหตุ:
 - ชุดนี้คือ `docs/railway.env.example` + ตัวแปรของ staging — **ห้าม copy ค่าจาก production มาวาง** โดยเฉพาะ `ADMIN_PASSWORD` และ `SESSION_SECRET`
 - สุ่ม `SESSION_SECRET` ได้ด้วยคำสั่งนี้ในเครื่อง: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`
-- `MAIL_PROVIDER=log` + `MAIL_LOG_LINKS=1` = ไม่ส่งอีเมลจริง แต่เขียนลิงก์ตั้งรหัสใหม่ลง Deploy Logs ให้ก๊อปไปเปิดเอง — **ใช้ใน staging เท่านั้น ห้ามตั้งใน production**
-- ตัวแปร `SESSION_SECRET`, `MAIL_*`, `TERMS_VERSION`, `LINE_LOGIN_ENABLED` ใช้กับระบบสมาชิก (Phase 1–2) ใส่ไว้ก่อนได้เลย ระหว่างนี้แอปจะไม่สนใจ
+- `MAIL_PROVIDER=log` + `MAIL_LOG_LINKS=1` = ไม่ส่งอีเมลจริง แต่เขียนเนื้ออีเมล (มีลิงก์ตั้งรหัสใหม่) ลง Deploy Logs ให้ก๊อปไปเปิดเอง — **ใช้ใน staging เท่านั้น** แอปยอมเปิดค่านี้ตอน `NODE_ENV=production` ก็ต่อเมื่อตั้ง `SITE_BANNER` ไว้ด้วย (ลบ `SITE_BANNER` ออก = เว็บไม่ยอม start)
+  - หาลิงก์ใน log: ค้นคำว่า `[mail:log]` → บรรทัด `https://<โดเมน staging>/reset.html#token=…`
+- ไม่ต้องตั้ง `PUBLIC_URL` — แอปใช้โดเมนที่ Railway ให้ (`RAILWAY_PUBLIC_DOMAIN`) ในลิงก์อีเมลเอง ต้องกด Generate Domain (ข้อ 5) ก่อน ไม่งั้น "ลืมรหัสผ่าน?" จะถูกซ่อน
+- ไม่ต้องตั้ง `RESEND_API_KEY` / `MAIL_FROM` ใน staging
 - **ห้ามโอนเงินจริง** แม้ QR จะเป็นของบัญชีจริง — ทดสอบด้วยปุ่ม "แจ้งโอน" และให้แอดมิน staging กดยืนยันยอดเองแทน
 
 ## 5. ทำโดเมน

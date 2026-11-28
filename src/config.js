@@ -60,6 +60,18 @@ const config = {
   // ใช้ทำ HMAC ของ IP ใน session — production ต้องตั้ง ≥32 ตัว, เครื่อง dev ไม่ตั้ง = สุ่มใหม่ทุกครั้งที่ start
   sessionSecret: str(env.SESSION_SECRET),
   termsVersion: str(env.TERMS_VERSION, '2026-11').slice(0, 40),
+  lineLoginEnabled: bool(env.LINE_LOGIN_ENABLED), // เฟสถัดไป — ตอนนี้แค่ซ่อน/แสดงปุ่ม
+
+  // อีเมล (ลืมรหัสผ่าน / แจ้งเตือนเปลี่ยนรหัส): resend | log | ว่าง = ปิด
+  mailProvider: str(env.MAIL_PROVIDER).toLowerCase(),
+  resendApiKey: str(env.RESEND_API_KEY),
+  resendApiUrl: str(env.RESEND_API_URL, 'https://api.resend.com').replace(/\/+$/, ''),
+  mailFrom: str(env.MAIL_FROM),
+  mailLogLinks: bool(env.MAIL_LOG_LINKS),
+  // URL หน้าเว็บที่ใช้ในลิงก์ทางอีเมล — ไม่ใช้ Host header เพราะคนนอกปลอมได้
+  // ไม่ตั้ง → ใช้โดเมนที่ Railway ให้ (RAILWAY_PUBLIC_DOMAIN) / เครื่อง dev ใช้ http://localhost:<PORT>
+  publicUrl: str(env.PUBLIC_URL).replace(/\/+$/, ''),
+  railwayPublicDomain: str(env.RAILWAY_PUBLIC_DOMAIN),
 };
 
 // TRUST_PROXY: ว่าง = ไม่ตั้ง, ตัวเลข = จำนวน proxy, true/false, หรือค่าอื่นของ Express เช่น loopback
@@ -76,6 +88,15 @@ config.autoFulfill = !!(config.supplierApiUrl && config.supplierApiKey);
 config.webhookEnabled = !!config.paymentWebhookSecret;
 config.sessionSecretSet = !!config.sessionSecret;
 if (!config.sessionSecret) config.sessionSecret = crypto.randomBytes(32).toString('base64url');
+if (!config.publicUrl && config.railwayPublicDomain) config.publicUrl = `https://${config.railwayPublicDomain}`;
+if (!config.publicUrl && !config.isProduction) config.publicUrl = `http://localhost:${config.port || 3000}`;
+// staging = production ที่ตั้ง SITE_BANNER ไว้ (เป็นที่เดียวที่ยอมให้เขียนลิงก์รีเซ็ตลง log)
+config.isStaging = config.isProduction && !!config.siteBanner;
+config.mailReady =
+  (config.mailProvider === 'resend' && !!(config.resendApiKey && config.mailFrom)) ||
+  (config.mailProvider === 'log' && config.mailLogLinks);
+// หน้าเว็บโชว์ "ลืมรหัสผ่าน?" เฉพาะเมื่อส่งลิงก์ถึงลูกค้าได้จริง
+config.passwordResetEnabled = config.mailReady && !!config.publicUrl;
 
 // ปัญหาที่ทำให้ไม่ควร start บน production
 config.startupProblems = () => {
@@ -88,6 +109,15 @@ config.startupProblems = () => {
     if (!config.sessionSecretSet || config.sessionSecret.length < 32) {
       problems.push('SESSION_SECRET ต้องตั้งเอง และยาวอย่างน้อย 32 ตัวอักษร (สุ่มด้วย node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64url\'))")');
     }
+    if (config.mailLogLinks && !config.siteBanner) {
+      problems.push('MAIL_LOG_LINKS=1 ใช้ได้เฉพาะเว็บทดสอบ (ต้องตั้ง SITE_BANNER ด้วย) — เว็บจริงห้ามเขียนลิงก์รีเซ็ตรหัสลง log');
+    }
+  }
+  if (config.mailProvider && !['resend', 'log'].includes(config.mailProvider)) {
+    problems.push(`MAIL_PROVIDER ต้องเป็น resend, log หรือเว้นว่าง (ตอนนี้: ${config.mailProvider})`);
+  }
+  if (config.mailProvider === 'resend' && !(config.resendApiKey && config.mailFrom)) {
+    problems.push('MAIL_PROVIDER=resend ต้องตั้ง RESEND_API_KEY และ MAIL_FROM ด้วย');
   }
   return problems;
 };

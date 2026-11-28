@@ -175,6 +175,14 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | `RATE_LIMIT_OFF` | `0` | `1` = ปิด rate limit (ใช้ตอนเทสเท่านั้น) |
 | `SESSION_SECRET` | – (สุ่มทุกครั้งที่ start) | ใช้ทำ HMAC ของ IP ใน session สมาชิก — production ต้องตั้งเอง ยาว ≥ 32 ตัว ไม่งั้นไม่ยอมเริ่ม |
 | `TERMS_VERSION` | `2026-11` | เวอร์ชันเงื่อนไขการใช้งานที่บันทึกตอนสมาชิกสมัคร (เปลี่ยนเมื่อแก้เงื่อนไข) |
+| `LINE_LOGIN_ENABLED` | `0` | `1` = แสดงปุ่มเข้าสู่ระบบด้วย LINE (เฟสถัดไป) |
+| `MAIL_PROVIDER` | – | `resend` = ส่งอีเมลจริง · `log` = เขียนลง log (ทดสอบ) · ว่าง = ปิด "ลืมรหัสผ่าน?" (`/api/config` ส่ง `passwordResetEnabled: false`) |
+| `RESEND_API_KEY` | – | API key ของ Resend (ใช้คู่กับ `MAIL_PROVIDER=resend` และ `MAIL_FROM`) |
+| `MAIL_FROM` | – | ผู้ส่งอีเมล เช่น `Koinz <no-reply@โดเมนร้าน>` (โดเมนต้องยืนยันใน Resend แล้ว) |
+| `MAIL_LOG_LINKS` | `0` | `1` = เขียนเนื้ออีเมล (มีลิงก์รีเซ็ต) ลง log — production ต้องตั้ง `SITE_BANNER` ด้วย (= staging) ไม่งั้นไม่ยอมเริ่ม |
+| `RESEND_API_URL` | `https://api.resend.com` | ที่อยู่ API ของ Resend (เปลี่ยนเฉพาะตอนเทส) |
+| `PUBLIC_URL` | โดเมน Railway / `http://localhost:<PORT>` | URL หน้าเว็บที่ใช้ในลิงก์ทางอีเมล (ไม่ใช้ Host header เพราะปลอมได้) — ตั้งเมื่อใช้โดเมนของร้านเอง |
+| `RAILWAY_PUBLIC_DOMAIN` | – | Railway ใส่ให้เอง ใช้เป็นค่าเริ่มต้นของ `PUBLIC_URL` |
 | `SITE_BANNER` | – | ข้อความแถบเหลืองบนสุดของทุกหน้า เช่น `เว็บทดสอบ — ห้ามโอนเงินจริง` (ตั้งใน staging เท่านั้น ดู [`docs/staging.md`](docs/staging.md)) |
 
 ## API
@@ -183,11 +191,11 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 
 | Method | Path | ใช้ทำอะไร |
 |---|---|---|
-| GET | `/api/config` | `{shopName, promptPayName, shopLineUrl, lookupEnabled, autoFulfill, orderTtlMinutes, siteBanner}` |
+| GET | `/api/config` | `{shopName, promptPayName, shopLineUrl, lookupEnabled, autoFulfill, orderTtlMinutes, siteBanner, passwordResetEnabled, lineLoginEnabled}` |
 | GET | `/api/games` | รายชื่อเกม (`slug, name, category, color, currency, initial, minPrice`) |
 | GET | `/api/games/:slug` | เกม + `fields` + `packages` (ไม่มี `sku`/`cost`) |
 | POST | `/api/player/lookup` | `{gameSlug, playerInputs}` → `{nickname, mock}` · 404 ถ้ายังไม่เปิดระบบหรือไม่พบผู้เล่น · 30 ครั้ง/นาที |
-| POST | `/api/orders` | `{gameSlug, packageId, playerInputs, contact?, idempotencyKey?}` → `201 {id, token}` (key ซ้ำ → `200` ออเดอร์เดิม) · 20 ครั้ง/นาที |
+| POST | `/api/orders` | `{gameSlug, packageId, playerInputs, contact?, idempotencyKey?}` → `201 {id, token}` (key ซ้ำ → `200` ออเดอร์เดิม) · 20 ครั้ง/นาที · ล็อกอินอยู่ = ผูกกับบัญชี + จำ UID |
 | GET | `/api/orders/:id?t=token` | ออเดอร์ + `serverTime` + `qr` (เฉพาะตอนรอโอนและยังไม่หมดเวลา) |
 | GET | `/api/orders/:id/events?t=token` | SSE: `event: status` ทุกครั้งที่สถานะเปลี่ยน, `: ping` ทุก 25 วินาที |
 | POST | `/api/orders/:id/notify` | `{t, note?, lineId?}` ลูกค้าแจ้งโอน (จาก `pending_payment` หรือ `expired`) · 10 ครั้ง/นาที |
@@ -202,6 +210,16 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | POST | `/api/auth/login` | `{email, password}` → `{email, createdAt}` · ผิด → `401` ข้อความเดียวเสมอ · ผิด 5 ครั้งใน 15 นาที → `423 {error, lockedUntil, retryAfter}` 15 นาที · 10 ครั้ง/นาที |
 | POST | `/api/auth/logout` | ลบ session ปัจจุบัน + ล้าง cookie |
 | GET | `/api/me` | `{email, createdAt, sessionCount}` หรือ `401` |
+| POST | `/api/auth/logout-all` | ออกจากระบบทุกอุปกรณ์ (รวมเครื่องนี้) |
+| POST | `/api/auth/forgot` | `{email}` → `200` ข้อความเดียวกันเสมอไม่ว่ามีบัญชีหรือไม่ · ต่ออีเมล 3 ครั้ง/ชม. เว้น 60 วิ (เกิน = ไม่ส่งเงียบ ๆ) · ต่อ IP 10 ครั้ง/ชม. · ปิดอีเมลอยู่ → `503` |
+| GET | `/api/auth/reset/:token` | `{valid: true, email}` หรือ `404 {valid: false}` (ไม่บอกอีเมล) |
+| POST | `/api/auth/reset` | `{token, password, logoutOthers}` → ใช้ได้ครั้งเดียว, ลบลิงก์อื่นของบัญชี, ปลดล็อก, ล็อกอินให้ · `logoutOthers` ไม่ใช่ `false` = ออกจากระบบเครื่องอื่นทั้งหมด |
+| POST | `/api/me/password` | `{currentPassword, newPassword}` → ออกจากระบบเครื่องอื่นทั้งหมด + อีเมลแจ้ง |
+| GET | `/api/me/orders` | ออเดอร์ของฉัน 50 รายการล่าสุด (ไม่มี `token`, `contact`, `lineId`) |
+| POST | `/api/me/orders/claim` | `[{id, token}]` (จาก localStorage) → `{claimed: [id]}` ผูกเฉพาะที่ token ถูกและยังไม่มีเจ้าของ |
+| GET | `/api/me/players` · `/api/me/players/:gameSlug` | UID ที่บันทึกไว้ `{gameSlug, inputs, label, updatedAt}` (1 รายการต่อเกม อัปเดตทุกครั้งที่สั่งตอนล็อกอิน) |
+| DELETE | `/api/me/players/:gameSlug` | ลบ UID ที่บันทึกของเกมนั้น |
+| POST | `/api/me/delete` | `{password}` → ลบบัญชี (PDPA): ลบ session/UID/ลิงก์รีเซ็ต, users เหลือแถวแบบไม่มีข้อมูลส่วนตัว, ออเดอร์เก่าเก็บไว้แต่ไม่ผูก |
 
 ### Webhook
 

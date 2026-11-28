@@ -102,7 +102,7 @@ async function transition(id, to, actor, { from, patch, note } = {}) {
 
 // ข้อมูลที่ลูกค้าเห็นได้ (ผ่าน token)
 function publicView(o) {
-  const { token, contact, lineId, idempotencyKey, customerNote, sku, ...rest } = o;
+  const { token, contact, lineId, idempotencyKey, customerNote, sku, userId, ...rest } = o;
   return rest;
 }
 

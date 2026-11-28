@@ -34,6 +34,14 @@ const BASE_ENV = {
   SESSION_SECRET: '',
   TERMS_VERSION: '',
   SITE_BANNER: '',
+  LINE_LOGIN_ENABLED: '',
+  MAIL_PROVIDER: '',
+  RESEND_API_KEY: '',
+  RESEND_API_URL: '',
+  MAIL_FROM: '',
+  MAIL_LOG_LINKS: '',
+  PUBLIC_URL: '',
+  RAILWAY_PUBLIC_DOMAIN: '',
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -136,7 +144,20 @@ async function startServer(env = {}) {
     if (db) await db.drop();
   }
 
-  return { base, req, readData, dumpAll, stop, dataDir, log: () => log };
+  // แก้ข้อมูลที่เก็บไว้ตรง ๆ (เช่น ทำให้ลิงก์หมดอายุ): json(list) แก้ไฟล์ data/<name>.json / pg รัน SQL
+  async function mutate(name, { json, sql, params = [] }) {
+    if (!db) {
+      const file = path.join(dataDir, `${name}.json`);
+      const list = JSON.parse(fs.readFileSync(file, 'utf8'));
+      json(list);
+      fs.writeFileSync(file, JSON.stringify(list, null, 2));
+      return;
+    }
+    pgRepo = pgRepo || require('../src/repo/pg').createPgRepo(db.url);
+    await pgRepo.pool.query(sql, params);
+  }
+
+  return { base, req, readData, dumpAll, mutate, stop, dataDir, isPg: !!db, log: () => log };
 }
 
 // เปิด Express ปลอม (supplier / lookup / alert) → { url, close }

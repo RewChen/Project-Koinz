@@ -96,4 +96,39 @@ async function sendAlert(text) {
   }
 }
 
-module.exports = { AdapterError, lookupEnabled, lookupNickname, fulfillTopup, sendAlert };
+// อีเมลถึงสมาชิก → true เมื่อส่งได้ (ไม่ throw เด็ดขาด)
+//   MAIL_PROVIDER=resend → ส่งจริงผ่าน Resend API ด้วย fetch
+//   MAIL_PROVIDER=log    → เขียนลง log: เนื้อหา (ที่มีลิงก์รีเซ็ต) เฉพาะเมื่อ MAIL_LOG_LINKS=1 — ใช้ใน staging เท่านั้น
+// log ทุกบรรทัดใช้อีเมลแบบปิดบางส่วน (n***@example.com) ไม่พิมพ์ API key
+const maskEmail = (e) => {
+  const [local = '', domain = ''] = String(e || '').split('@');
+  return `${local.slice(0, 1)}***@${domain}`;
+};
+
+async function sendMail({ to, subject, text }) {
+  const who = maskEmail(to);
+  if (config.mailProvider === 'log') {
+    if (config.mailLogLinks) console.log(`📧 [mail:log] ถึง ${who} · ${subject}\n${text}\n📧 [mail:log] จบ`);
+    else console.log(`📧 [mail:log] ถึง ${who} · ${subject} (ไม่แสดงเนื้อหา — ตั้ง MAIL_LOG_LINKS=1 เฉพาะ staging)`);
+    return config.mailLogLinks;
+  }
+  if (config.mailProvider !== 'resend' || !config.resendApiKey || !config.mailFrom) {
+    console.log(`📧 ยังไม่ได้ตั้งค่าอีเมล — ไม่ได้ส่ง "${subject}" ถึง ${who}`);
+    return false;
+  }
+  try {
+    const res = await fetch(`${config.resendApiUrl}/emails`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${config.resendApiKey}` },
+      body: JSON.stringify({ from: config.mailFrom, to: [to], subject, text }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) console.error(`ส่งอีเมลถึง ${who} ไม่สำเร็จ: HTTP ${res.status}`);
+    return res.ok;
+  } catch (e) {
+    console.error(`ส่งอีเมลถึง ${who} ไม่สำเร็จ: ${e.name === 'TimeoutError' ? 'หมดเวลา 10 วินาที' : e.message}`);
+    return false;
+  }
+}
+
+module.exports = { AdapterError, lookupEnabled, lookupNickname, fulfillTopup, sendAlert, sendMail, maskEmail };

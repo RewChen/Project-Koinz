@@ -10,6 +10,7 @@ const adapters = require('./adapters');
 const security = require('./security');
 const jobs = require('./jobs');
 const authRoutes = require('./auth/routes');
+const session = require('./auth/session');
 const { promptPayPayload } = require('./promptpay');
 
 const fail = (res, code, error) => res.status(code).json({ error });
@@ -52,6 +53,8 @@ function createApp() {
       autoFulfill: config.autoFulfill,
       orderTtlMinutes: config.orderTtlMinutes,
       siteBanner: config.siteBanner,
+      passwordResetEnabled: config.passwordResetEnabled,
+      lineLoginEnabled: config.lineLoginEnabled,
     });
   });
 
@@ -80,7 +83,8 @@ function createApp() {
     }
   }));
 
-  app.post('/api/orders', security.limits.createOrder, wrap(async (req, res) => {
+  // มี cookie สมาชิก → ผูกออเดอร์กับบัญชี + จำ UID (ไม่มีก็สั่งแบบ guest ได้เหมือนเดิม)
+  app.post('/api/orders', security.limits.createOrder, session.middleware, wrap(async (req, res) => {
     const body = req.body || {};
     const key = body.idempotencyKey;
     const hasKey = key !== undefined && key !== null && key !== '';
@@ -119,7 +123,9 @@ function createApp() {
       amount: pkg.price,
       expiresAt: new Date(Date.now() + config.orderTtlMinutes * 60000).toISOString(),
       idempotencyKey: hasKey ? key : null,
+      ...(req.member ? { userId: req.member.user.id } : {}),
     });
+    if (created) await authRoutes.rememberPlayer(req, game, inputs);
     res.status(created ? 201 : 200).json({ id: order.id, token: order.token });
   }));
 

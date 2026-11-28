@@ -82,7 +82,8 @@ const BLOCKED = 'คำขอนี้ไม่ได้มาจากหน้
 function sameOriginOnly(req, res, next) {
   if (SAFE_METHODS.includes(req.method)) return next();
   const deny = () => res.status(403).json({ error: BLOCKED });
-  if (!req.is('application/json')) return deny();
+  // DELETE ไม่มี body (เช่น ลบ UID ที่บันทึก) จึงเช็คแค่ Origin — ส่วน form ข้ามเว็บทำได้แค่ GET/POST
+  if (req.method !== 'DELETE' && !req.is('application/json')) return deny();
   const site = req.get('sec-fetch-site');
   if (site && site !== 'same-origin' && site !== 'same-site') return deny();
   const origin = req.get('origin');

@@ -2,7 +2,7 @@ const config = require('./src/config');
 
 const problems = config.startupProblems();
 if (problems.length) {
-  console.error('❌ ไม่สามารถเริ่มเซิร์ฟเวอร์บน production ได้:');
+  console.error('❌ ไม่สามารถเริ่มเซิร์ฟเวอร์ได้ (แก้ค่าตั้งค่าต่อไปนี้ก่อน):');
   problems.forEach((p) => console.error('   - ' + p));
   process.exit(1);
 }

@@ -3,8 +3,12 @@
 const crypto = require('crypto');
 const config = require('../config');
 const repo = require('../repo');
+const adapters = require('../adapters');
+const security = require('../security');
 const password = require('./password');
-const { sha256 } = require('./session');
+const session = require('./session');
+
+const { sha256 } = session;
 
 const MINUTE = 60 * 1000;
 const LOCK = { max: 5, windowMs: 15 * MINUTE, lockMs: 15 * MINUTE };
@@ -19,6 +23,12 @@ const MSG = {
   missing: 'กรุณากรอกอีเมลและรหัสผ่าน',
   terms: 'กรุณายอมรับเงื่อนไขการใช้งานและนโยบายความเป็นส่วนตัวก่อนสมัคร',
   loginRequired: 'กรุณาเข้าสู่ระบบ',
+  forgotSent: 'ถ้าอีเมลนี้มีบัญชีกับร้าน เราได้ส่งลิงก์ตั้งรหัสผ่านใหม่ไปแล้ว ลิงก์ใช้ได้ 30 นาที และใช้ได้ครั้งเดียว',
+  resetDisabled: 'ระบบลืมรหัสผ่านยังไม่เปิดใช้งาน ติดต่อร้านทาง LINE เพื่อขอความช่วยเหลือ',
+  resetInvalid: 'ลิงก์นี้ใช้ไม่ได้แล้ว ลิงก์หมดอายุ (เกิน 30 นาที) หรือถูกใช้ไปแล้ว ขอลิงก์ใหม่ได้เลย',
+  wrongCurrent: 'รหัสผ่านปัจจุบันไม่ถูกต้อง',
+  wrongPassword: 'รหัสผ่านไม่ถูกต้อง',
+  samePassword: 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม',
 };
 
 class AuthError extends Error {
@@ -40,10 +50,7 @@ function normalizeEmail(v) {
 }
 
 // สำหรับ log/audit: nan@example.com → n***@example.com
-function maskEmail(e) {
-  const [local = '', domain = ''] = String(e || '').split('@');
-  return `${local.slice(0, 1)}***@${domain}`;
-}
+const { maskEmail } = adapters;
 
 const audit = (action, user, extra = '') =>
   repo.appendAudit({
@@ -182,6 +189,164 @@ async function createPasswordReset(userId) {
   return token;
 }
 
+const thaiTime = (ms) =>
+  new Date(ms).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short' });
+
+// แจ้งเจ้าของบัญชีเมื่อรหัสถูกเปลี่ยน (ไม่รอผล ไม่ให้การส่งอีเมลช้า/ล้มกระทบคำขอ)
+function notifyPasswordChanged(user, how) {
+  adapters.sendMail({
+    to: user.email,
+    subject: `รหัสผ่านของคุณถูกเปลี่ยนแล้ว — ${config.shopName}`,
+    text: [
+      `รหัสผ่านบัญชี ${config.shopName} ของคุณถูก${how}เมื่อ ${thaiTime(Date.now())}`,
+      '',
+      'ถ้าคุณทำเอง ไม่ต้องทำอะไรต่อ',
+      `ถ้าไม่ได้ทำเอง ให้ตั้งรหัสผ่านใหม่ทันทีที่ ${config.publicUrl}/forgot.html และติดต่อร้าน`,
+    ].join('\n'),
+  });
+}
+
+// ลืมรหัส: ตอบเหมือนกันเสมอ — ไม่มีบัญชี / ขอถี่เกิน (ต่ออีเมล 3 ครั้ง/ชม. และเว้น 60 วิ) = ไม่ส่งเงียบ ๆ
+async function requestPasswordReset(rawEmail) {
+  if (!config.passwordResetEnabled) throw new AuthError(503, MSG.resetDisabled);
+  const email = normalizeEmail(rawEmail);
+  if (!email) throw new AuthError(400, MSG.badEmail);
+  const key = sha256(email);
+  const gap = security.hit(`forgot-gap:${key}`, 1, MINUTE);
+  const hourly = gap.ok ? security.hit(`forgot-email:${key}`, 3, 60 * MINUTE) : gap;
+  if (!gap.ok || !hourly.ok) return;
+  const user = await repo.findUserByEmail(email);
+  if (!user) return;
+  const token = await createPasswordReset(user.id);
+  await audit('member_reset_requested', user);
+  adapters.sendMail({
+    to: user.email,
+    subject: `ตั้งรหัสผ่านใหม่ — ${config.shopName}`,
+    // token อยู่หลัง # → ไม่ถูกส่งไปกับ request จึงไม่ติดใน access log หรือ Referer
+    text: [
+      `มีคำขอตั้งรหัสผ่านใหม่สำหรับบัญชี ${config.shopName} ของคุณ`,
+      'กดลิงก์นี้ภายใน 30 นาที (ใช้ได้ครั้งเดียว):',
+      `${config.publicUrl}/reset.html#token=${token}`,
+      '',
+      'ถ้าคุณไม่ได้ขอ ไม่ต้องทำอะไร รหัสผ่านเดิมยังใช้ได้ตามปกติ',
+    ].join('\n'),
+  });
+}
+
+const tokenShape = (t) => typeof t === 'string' && /^[A-Za-z0-9_-]{43}$/.test(t);
+
+// ลิงก์ยังใช้ได้ไหม → user หรือ null (ไม่ consume)
+async function findResetUser(token) {
+  if (!tokenShape(token)) return null;
+  const r = await repo.getPasswordReset(sha256(token));
+  if (!r || r.usedAt || Date.parse(r.expiresAt) <= Date.now()) return null;
+  return repo.getUser(r.userId);
+}
+
+// ตั้งรหัสใหม่จากลิงก์: ตรวจนโยบายก่อนใช้ token (รหัสไม่ผ่านแล้วลิงก์ยังใช้ต่อได้) → ใช้ครั้งเดียว → ลบลิงก์อื่น
+async function resetPassword({ token, password: pw, logoutOthers }) {
+  const user = await findResetUser(token);
+  if (!user) throw new AuthError(400, MSG.resetInvalid, { resetInvalid: true });
+  if (typeof pw !== 'string' || pw.length > MAX_INPUT) throw new AuthError(400, password.MESSAGES.tooLong);
+  const problem = password.checkPolicy(pw, user.email);
+  if (problem) throw new AuthError(400, problem);
+  const passwordHash = await password.hashPassword(pw);
+  const now = iso(Date.now());
+  const used = await repo.consumePasswordReset(sha256(token), now);
+  if (!used || used.userId !== user.id) throw new AuthError(400, MSG.resetInvalid, { resetInvalid: true });
+  await repo.updateUserPassword(user.id, { now, passwordHash });
+  await repo.deleteUserPasswordResets(user.id);
+  const ended = logoutOthers === false ? 0 : await session.endAllFor(user.id);
+  await audit('member_reset', user, `ออกจากระบบอุปกรณ์อื่น ${ended} เครื่อง`);
+  notifyPasswordChanged(user, 'ตั้งใหม่ผ่านลิงก์ "ลืมรหัสผ่าน"');
+  return user;
+}
+
+// ยืนยันรหัสปัจจุบันของคนที่ล็อกอินอยู่ (เปลี่ยนรหัส / ลบบัญชี)
+async function confirmPassword(user, pw, message) {
+  const fresh = await repo.getUser(user.id);
+  if (!fresh || typeof pw !== 'string' || !pw || pw.length > MAX_INPUT) {
+    await password.verifyDummy(String(pw || '').slice(0, MAX_INPUT));
+    throw new AuthError(400, message);
+  }
+  const { ok } = await password.verifyPassword(pw, fresh.passwordHash);
+  if (!ok) {
+    await audit('member_confirm_failed', user);
+    throw new AuthError(400, message);
+  }
+  return fresh;
+}
+
+// เปลี่ยนรหัส: ต้องรู้รหัสเดิม → ลบ session อื่นทั้งหมด (เหลือเครื่องนี้)
+async function changePassword(user, sessionId, { currentPassword, newPassword }) {
+  await confirmPassword(user, currentPassword, MSG.wrongCurrent);
+  if (typeof newPassword !== 'string' || newPassword.length > MAX_INPUT) throw new AuthError(400, password.MESSAGES.tooLong);
+  const problem = password.checkPolicy(newPassword, user.email);
+  if (problem) throw new AuthError(400, problem);
+  if (password.normalizeForCompare(newPassword) === password.normalizeForCompare(currentPassword)) {
+    throw new AuthError(400, MSG.samePassword);
+  }
+  await repo.updateUserPassword(user.id, { now: iso(Date.now()), passwordHash: await password.hashPassword(newPassword) });
+  await repo.deleteUserPasswordResets(user.id);
+  const ended = await session.endAllFor(user.id, sessionId);
+  await audit('member_password_changed', user, `ออกจากระบบอุปกรณ์อื่น ${ended} เครื่อง`);
+  notifyPasswordChanged(user, 'เปลี่ยน');
+}
+
+async function logoutAll(user) {
+  const ended = await session.endAllFor(user.id);
+  await audit('member_logout_all', user, `${ended} เครื่อง`);
+}
+
+// ลบบัญชี (PDPA) — ต้องยืนยันด้วยรหัสผ่าน
+async function deleteAccount(user, pw) {
+  await confirmPassword(user, pw, MSG.wrongPassword);
+  await repo.deleteUserAccount(user.id, iso(Date.now()));
+  await audit('member_deleted', user);
+}
+
+// ---------- ออเดอร์ / UID ของสมาชิก ----------
+const safeEqual = (a, b) =>
+  crypto.timingSafeEqual(crypto.createHash('sha256').update(String(a)).digest(), crypto.createHash('sha256').update(String(b)).digest());
+
+// ออเดอร์ที่สั่งจากเครื่องนี้ก่อนล็อกอิน [{id, token}] → ผูกเฉพาะที่ token ถูกและยังไม่มีเจ้าของ
+async function claimOrders(user, items) {
+  const list = Array.isArray(items) ? items.slice(0, 50) : [];
+  const claimed = [];
+  for (const it of list) {
+    if (!it || typeof it.id !== 'string' || typeof it.token !== 'string' || it.id.length > 40 || it.token.length > 100) continue;
+    const order = await repo.getOrder(it.id);
+    if (!order || order.userId || !safeEqual(order.token, it.token)) continue;
+    if (await repo.claimOrder(order.id, user.id)) {
+      claimed.push(order.id);
+      await repo.appendAudit({ at: iso(Date.now()), orderId: order.id, action: 'member_claim', actor: 'member', note: `user ${user.id}` });
+    }
+  }
+  return claimed;
+}
+
+// ออเดอร์ของสมาชิก: ไม่มี token / contact / LINE / หมายเหตุ
+const memberOrderView = (o) => ({
+  id: o.id,
+  status: o.status,
+  gameSlug: o.gameSlug,
+  gameName: o.gameName,
+  packageId: o.packageId,
+  packageName: o.packageName,
+  playerInputs: o.playerInputs,
+  playerLabel: o.playerLabel,
+  playerNickname: o.playerNickname,
+  amount: o.amount,
+  expiresAt: o.expiresAt,
+  createdAt: o.createdAt,
+  updatedAt: o.updatedAt,
+});
+
+const savePlayer = (userId, gameSlug, inputs, label) =>
+  repo.upsertSavedPlayer({ userId, gameSlug, inputs, label, updatedAt: iso(Date.now()) });
+
+const playerView = (p) => ({ gameSlug: p.gameSlug, inputs: p.inputs, label: p.label, updatedAt: p.updatedAt });
+
 // ข้อมูลที่ส่งให้หน้าเว็บ
 const publicUser = (u) => ({ email: u.email, createdAt: u.createdAt });
 
@@ -195,6 +360,19 @@ module.exports = {
   signup,
   login,
   createPasswordReset,
+  requestPasswordReset,
+  findResetUser,
+  resetPassword,
+  changePassword,
+  logoutAll,
+  deleteAccount,
+  claimOrders,
+  memberOrderView,
+  savePlayer,
+  playerView,
+  listOrders: async (user) => (await repo.listOrdersByUser(user.id, 50)).map(memberOrderView),
+  listPlayers: async (user) => (await repo.listSavedPlayers(user.id)).map(playerView),
+  deletePlayer: (user, gameSlug) => repo.deleteSavedPlayer(user.id, gameSlug),
   publicUser,
   cleanup: () => repo.deleteStalePasswordResets(iso(Date.now())),
 };

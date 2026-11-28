@@ -112,6 +112,7 @@ module.exports = {
   hashPassword,
   verifyPassword,
   verifyDummy,
+  normalizeForCompare: normalize,
   isCommon: (pw) => COMMON.has(normalize(pw).toLowerCase()),
   commonList: { file: COMMON_FILE, size: COMMON.size },
 };

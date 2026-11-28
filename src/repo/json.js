@@ -258,5 +258,88 @@ module.exports = {
     const keep = list.filter((r) => !r.usedAt && Date.parse(r.expiresAt) > Date.parse(now));
     if (keep.length !== list.length) store.write('password_resets', keep);
   },
+  // ใช้ลิงก์ครั้งเดียว: ยังไม่ใช้ + ยังไม่หมดอายุ → ตั้ง usedAt แล้วคืนแถว (ไม่งั้น null) ในจังหวะเดียว
+  async consumePasswordReset(tokenHash, now) {
+    return store.update('password_resets', [], (list) => {
+      const r = list.find((x) => x.tokenHash === tokenHash);
+      if (!r || r.usedAt || Date.parse(r.expiresAt) <= Date.parse(now)) return null;
+      r.usedAt = now;
+      return structuredClone(r);
+    });
+  },
+  async deleteUserPasswordResets(userId) {
+    store.update('password_resets', [], (list) => {
+      const keep = list.filter((r) => r.userId !== userId);
+      list.splice(0, list.length, ...keep);
+    });
+  },
+  // เปลี่ยนรหัส (และปลดล็อกบัญชี)
+  async updateUserPassword(id, { now, passwordHash }) {
+    store.update('users', [], (list) => {
+      const u = list.find((x) => x.id === id && !x.deletedAt);
+      if (!u) return;
+      Object.assign(u, { passwordHash, failedLogins: 0, failedWindowStartedAt: null, lockedUntil: null, updatedAt: now });
+    });
+  },
+  // ลบบัญชี (PDPA): ลบ session/UID/ลิงก์รีเซ็ต, ออเดอร์เก่าไม่ผูกกับ user แล้ว, แถว users เหลือแบบไม่มีข้อมูลส่วนตัว
+  async deleteUserAccount(id, now) {
+    for (const name of ['sessions', 'saved_players', 'password_resets']) {
+      store.update(name, [], (list) => {
+        const keep = list.filter((x) => x.userId !== id);
+        list.splice(0, list.length, ...keep);
+      });
+    }
+    store.update('orders', [], (list) => {
+      for (const o of list) if (o.userId === id) delete o.userId;
+    });
+    store.update('users', [], (list) => {
+      const u = list.find((x) => x.id === id);
+      if (!u) return;
+      Object.assign(u, {
+        email: `deleted-${id}@invalid`, passwordHash: '!', marketingOptIn: false,
+        failedLogins: 0, failedWindowStartedAt: null, lockedUntil: null, updatedAt: now, deletedAt: now,
+      });
+    });
+  },
+
+  // ---------- UID ที่สมาชิกบันทึกไว้ (1 แถวต่อเกม) ----------
+  async upsertSavedPlayer(p) {
+    store.update('saved_players', [], (list) => {
+      const cur = list.find((x) => x.userId === p.userId && x.gameSlug === p.gameSlug);
+      if (cur) Object.assign(cur, { inputs: p.inputs, label: p.label, updatedAt: p.updatedAt });
+      else list.push({ userId: p.userId, gameSlug: p.gameSlug, inputs: p.inputs, label: p.label, updatedAt: p.updatedAt });
+    });
+  },
+  async listSavedPlayers(userId) {
+    return store
+      .read('saved_players', [])
+      .filter((x) => x.userId === userId)
+      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  },
+  async deleteSavedPlayer(userId, gameSlug) {
+    return store.update('saved_players', [], (list) => {
+      const i = list.findIndex((x) => x.userId === userId && x.gameSlug === gameSlug);
+      if (i < 0) return false;
+      list.splice(i, 1);
+      return true;
+    });
+  },
+
+  // ---------- ออเดอร์ของสมาชิก ----------
+  async listOrdersByUser(userId, limit = 50) {
+    const all = store.read('orders', []);
+    const out = [];
+    for (let i = all.length - 1; i >= 0 && out.length < limit; i--) if (all[i].userId === userId) out.push(all[i]);
+    return out;
+  },
+  // ผูกออเดอร์กับ user เฉพาะเมื่อยังไม่มีเจ้าของ → true/false
+  async claimOrder(id, userId) {
+    return store.update('orders', [], (list) => {
+      const o = list.find((x) => x.id === id);
+      if (!o || o.userId) return false;
+      o.userId = userId;
+      return true;
+    });
+  },
 };
 

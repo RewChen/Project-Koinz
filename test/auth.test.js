@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { ROOT, BASE_ENV, PG_ADMIN_URL, createTestDatabase, startServer } = require('./helpers');
+const { ROOT, BASE_ENV, PG_ADMIN_URL, createTestDatabase, startServer, fakeServer, waitFor, mlOrder } = require('./helpers');
 const password = require('../src/auth/password');
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -419,3 +419,419 @@ describe('Auth Phase 1 — token ตั้งรหัสใหม่ไม่�
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 2 — API สมาชิก (อีเมลแบบ log: ลิงก์ตั้งรหัสใหม่อยู่ใน log ของเซิร์ฟเวอร์)
+const MAIL_ENV = { MAIL_PROVIDER: 'log', MAIL_LOG_LINKS: '1', PUBLIC_URL: 'https://koinz.test' };
+const FORGOT_SENT = 'ถ้าอีเมลนี้มีบัญชีกับร้าน เราได้ส่งลิงก์ตั้งรหัสผ่านใหม่ไปแล้ว ลิงก์ใช้ได้ 30 นาที และใช้ได้ครั้งเดียว';
+const resetTokens = (s) =>
+  [...s.log().matchAll(/https:\/\/koinz\.test\/reset\.html#token=([A-Za-z0-9_-]{43})/g)].map((m) => m[1]);
+async function nextResetToken(s, before) {
+  const t = await waitFor(() => (resetTokens(s).length > before ? resetTokens(s).at(-1) : null), 3000, 20);
+  assert.ok(t, 'ไม่พบลิงก์ตั้งรหัสใหม่ใน log');
+  return t;
+}
+async function member(s, email = newEmail(), pw = GOOD_PW) {
+  const b = browser(s);
+  const r = await b.signup(email, pw);
+  assert.equal(r.status, 201, r.text);
+  b.email = email;
+  return b;
+}
+const del = (s, url, b, origin = s.base) =>
+  fetch(s.base + url, { method: 'DELETE', headers: { origin, cookie: `koinz_sid=${b.jar.koinz_sid}` } });
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+describe('Auth Phase 2 — ลืมรหัส / ตั้งรหัสใหม่', () => {
+  let s;
+  before(async () => (s = await startServer(MAIL_ENV)));
+  after(() => s.stop());
+
+  test('/api/config บอกว่าเปิดลืมรหัสผ่าน และปิดปุ่ม LINE', async () => {
+    const c = (await s.req('GET', '/api/config')).body;
+    assert.equal(c.passwordResetEnabled, true);
+    assert.equal(c.lineLoginEnabled, false);
+  });
+
+  test('forgot ด้วยอีเมลที่มีและไม่มี → response เหมือนกันทุก byte (มีบัญชีเท่านั้นที่ได้อีเมล)', async () => {
+    const a = await member(s);
+    const n = resetTokens(s).length;
+    const has = await browser(s).post('/api/auth/forgot', { email: a.email });
+    const none = await browser(s).post('/api/auth/forgot', { email: newEmail() });
+    assert.equal(has.status, 200);
+    assert.equal(none.status, 200);
+    assert.equal(has.text, none.text);
+    assert.equal(has.headers.get('content-length'), none.headers.get('content-length'));
+    assert.equal(has.body.message, FORGOT_SENT);
+    await nextResetToken(s, n);
+    await pause(200);
+    assert.equal(resetTokens(s).length, n + 1, 'อีเมลที่ไม่มีบัญชีต้องไม่ได้ลิงก์');
+  });
+
+  test('ลิงก์ใช้ได้ → GET บอกอีเมล / ใช้ครั้งที่ 2 ไม่ได้ และ GET ไม่บอกอีเมล', async () => {
+    const a = await member(s);
+    const n = resetTokens(s).length;
+    await browser(s).post('/api/auth/forgot', { email: a.email });
+    const token = await nextResetToken(s, n);
+
+    const check = await browser(s).get(`/api/auth/reset/${token}`);
+    assert.equal(check.status, 200);
+    assert.deepEqual(check.body, { valid: true, email: a.email });
+
+    // รหัสใหม่ไม่ผ่านนโยบาย → ลิงก์ยังไม่ถูกใช้
+    const weak = await browser(s).post('/api/auth/reset', { token, password: 'password1234' });
+    assert.equal(weak.status, 400);
+    assert.equal(weak.body.error, 'รหัสผ่านนี้คนใช้กันบ่อย เดาง่าย ลองตั้งรหัสอื่น');
+
+    const b = browser(s);
+    const ok = await b.post('/api/auth/reset', { token, password: 'brand-new-secret-41', logoutOthers: true });
+    assert.equal(ok.status, 200, ok.text);
+    assert.equal(ok.body.email, a.email);
+    assert.equal((await b.get('/api/me')).status, 200, 'ตั้งรหัสใหม่แล้วต้องล็อกอินให้');
+
+    const again = await browser(s).post('/api/auth/reset', { token, password: 'another-new-secret-42' });
+    assert.equal(again.status, 400);
+    assert.equal(again.body.resetInvalid, true);
+    const gone = await browser(s).get(`/api/auth/reset/${token}`);
+    assert.equal(gone.status, 404);
+    assert.equal(gone.body.valid, false);
+    assert.ok(!gone.text.includes(a.email));
+
+    assert.equal((await browser(s).login(a.email, GOOD_PW)).status, 401);
+    assert.equal((await browser(s).login(a.email, 'brand-new-secret-41')).status, 200);
+    assert.ok(await waitFor(() => /รหัสผ่านของคุณถูกเปลี่ยนแล้ว/.test(s.log()), 3000, 20), 'ต้องมีอีเมลแจ้งเปลี่ยนรหัส');
+  });
+
+  test('ลิงก์เลย 30 นาที → ใช้ไม่ได้', async () => {
+    const a = await member(s);
+    const n = resetTokens(s).length;
+    await browser(s).post('/api/auth/forgot', { email: a.email });
+    const token = await nextResetToken(s, n);
+    const past = new Date(Date.now() - 1000).toISOString();
+    await s.mutate('password_resets', {
+      json: (list) => list.forEach((r) => { if (r.tokenHash === sha256(token)) r.expiresAt = past; }),
+      sql: 'UPDATE password_resets SET expires_at = $2 WHERE token_hash = $1',
+      params: [sha256(token), past],
+    });
+    assert.equal((await browser(s).get(`/api/auth/reset/${token}`)).status, 404);
+    const r = await browser(s).post('/api/auth/reset', { token, password: 'brand-new-secret-43' });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.resetInvalid, true);
+    assert.equal((await browser(s).login(a.email)).status, 200, 'รหัสเดิมยังใช้ได้');
+  });
+
+  test('reset สำเร็จพร้อม logoutOthers → session อื่นใช้ไม่ได้ทันที / ลิงก์อื่นของ user ถูกลบ', async () => {
+    const a = await member(s);
+    const other = browser(s);
+    await other.login(a.email);
+    assert.equal((await other.get('/api/me')).status, 200);
+    const n = resetTokens(s).length;
+    await browser(s).post('/api/auth/forgot', { email: a.email });
+    const first = await nextResetToken(s, n);
+    await browser(s).post('/api/auth/forgot', { email: a.email }); // เทสปิด rate limit จึงขอซ้ำได้ทันที
+    const second = await nextResetToken(s, n + 1);
+    assert.notEqual(first, second);
+
+    const r = await browser(s).post('/api/auth/reset', { token: second, password: 'brand-new-secret-44', logoutOthers: true });
+    assert.equal(r.status, 200);
+    assert.equal((await other.get('/api/me')).status, 401);
+    assert.equal((await a.get('/api/me')).status, 401);
+    assert.equal((await browser(s).get(`/api/auth/reset/${first}`)).status, 404, 'ลิงก์อื่นต้องใช้ไม่ได้แล้ว');
+  });
+
+  test('reset แบบ logoutOthers: false → เครื่องอื่นยังอยู่', async () => {
+    const a = await member(s);
+    const n = resetTokens(s).length;
+    await browser(s).post('/api/auth/forgot', { email: a.email });
+    const token = await nextResetToken(s, n);
+    const r = await browser(s).post('/api/auth/reset', { token, password: 'brand-new-secret-45', logoutOthers: false });
+    assert.equal(r.status, 200);
+    assert.equal((await a.get('/api/me')).status, 200);
+  });
+
+  test('reset ปลดล็อกบัญชีที่โดนล็อก', async () => {
+    const a = await member(s);
+    for (let i = 0; i < 5; i++) await browser(s).login(a.email, `wrong-password-${i}`);
+    assert.equal((await browser(s).login(a.email)).status, 423);
+    const n = resetTokens(s).length;
+    await browser(s).post('/api/auth/forgot', { email: a.email });
+    const token = await nextResetToken(s, n);
+    assert.equal((await browser(s).post('/api/auth/reset', { token, password: 'brand-new-secret-46' })).status, 200);
+    assert.equal((await browser(s).login(a.email, 'brand-new-secret-46')).status, 200);
+  });
+
+  test('audit ไม่มีรหัสผ่าน / token / อีเมลเต็ม และ log ไม่มีรหัสผ่าน อีเมลใน log ปิดบางส่วน', async () => {
+    const audit = (await s.readData('audit')).filter((x) => x.actor === 'member');
+    const text = JSON.stringify(audit);
+    assert.ok(audit.some((x) => x.action === 'member_reset'));
+    assert.ok(audit.some((x) => x.action === 'member_reset_requested'));
+    assert.doesNotMatch(text.replace(/\*\*\*@example\.com/g, ''), /@example\.com/, 'audit มีอีเมลเต็ม');
+    for (const t of resetTokens(s)) assert.ok(!text.includes(t));
+    assert.ok(!s.log().includes(GOOD_PW) && !s.log().includes('brand-new-secret'));
+    assert.match(s.log(), /\[mail:log\] ถึง m\*\*\*@example\.com/);
+    assert.doesNotMatch(s.log(), /member[a-z0-9]+@example\.com/);
+  });
+});
+
+describe('Auth Phase 2 — บัญชีของฉัน', () => {
+  let s;
+  before(async () => (s = await startServer(MAIL_ENV)));
+  after(() => s.stop());
+
+  test('เปลี่ยนรหัส: รหัสเดิมผิด → 400 / สำเร็จ → session อื่นหลุด เครื่องนี้ยังอยู่ + อีเมลแจ้ง', async () => {
+    const a = await member(s);
+    const other = browser(s);
+    await other.login(a.email);
+    assert.equal((await a.get('/api/me')).body.sessionCount, 2);
+
+    const wrong = await a.post('/api/me/password', { currentPassword: 'not-my-password', newPassword: 'brand-new-secret-51' });
+    assert.equal(wrong.status, 400);
+    assert.equal(wrong.body.error, 'รหัสผ่านปัจจุบันไม่ถูกต้อง');
+    const weak = await a.post('/api/me/password', { currentPassword: GOOD_PW, newPassword: 'short' });
+    assert.equal(weak.status, 400);
+    assert.equal(weak.body.error, 'รหัสผ่านต้องยาวอย่างน้อย 10 ตัว');
+    const same = await a.post('/api/me/password', { currentPassword: GOOD_PW, newPassword: GOOD_PW });
+    assert.equal(same.status, 400);
+    assert.equal(same.body.error, 'รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม');
+
+    const ok = await a.post('/api/me/password', { currentPassword: GOOD_PW, newPassword: 'brand-new-secret-51' });
+    assert.equal(ok.status, 200, ok.text);
+    const me = await a.get('/api/me');
+    assert.equal(me.status, 200);
+    assert.equal(me.body.sessionCount, 1);
+    assert.equal((await other.get('/api/me')).status, 401);
+    assert.equal((await browser(s).login(a.email, 'brand-new-secret-51')).status, 200);
+    assert.ok(await waitFor(() => /รหัสผ่านของคุณถูกเปลี่ยนแล้ว/.test(s.log()), 3000, 20));
+  });
+
+  test('ออกจากระบบทุกอุปกรณ์ → ทุก session (รวมเครื่องนี้) ใช้ไม่ได้', async () => {
+    const a = await member(s);
+    const other = browser(s);
+    await other.login(a.email);
+    const r = await a.post('/api/auth/logout-all');
+    assert.equal(r.status, 200);
+    assert.equal((await a.get('/api/me')).status, 401);
+    assert.equal((await other.get('/api/me')).status, 401);
+    assert.equal((await browser(s).post('/api/auth/logout-all')).status, 401);
+  });
+
+  test('สั่งออเดอร์ตอนล็อกอิน → ผูกกับบัญชี + บันทึก UID / guest ไม่ผูก', async () => {
+    const a = await member(s);
+    const r = await a.post('/api/orders', mlOrder());
+    assert.equal(r.status, 201, r.text);
+    const guest = await browser(s).post('/api/orders', mlOrder({ playerInputs: { uid: '555555555', zone: '5555' } }));
+    assert.equal(guest.status, 201);
+
+    const orders = await a.get('/api/me/orders');
+    assert.equal(orders.status, 200);
+    assert.deepEqual(orders.body.map((o) => o.id), [r.body.id]);
+    const o = orders.body[0];
+    for (const k of ['token', 'contact', 'lineId', 'customerNote', 'userId', 'idempotencyKey', 'sku']) {
+      assert.ok(!(k in o), `ไม่ควรมี ${k}`);
+    }
+    assert.equal(o.playerLabel, 'User ID 123456789 · Zone ID 1234');
+
+    const all = await s.readData('orders');
+    assert.ok(all.find((x) => x.id === r.body.id).userId);
+    assert.ok(!all.find((x) => x.id === guest.body.id).userId);
+    // หน้าออเดอร์แบบ token ไม่เปิดเผย userId
+    const pub = await browser(s).get(`/api/orders/${r.body.id}?t=${r.body.token}`);
+    assert.equal(pub.status, 200);
+    assert.ok(!('userId' in pub.body));
+
+    const players = await a.get('/api/me/players');
+    assert.deepEqual(players.body.map((p) => [p.gameSlug, p.inputs, p.label]), [
+      ['mobile-legends', { uid: '123456789', zone: '1234' }, 'User ID 123456789 · Zone ID 1234'],
+    ]);
+    // สั่งเกมเดิมด้วย UID ใหม่ → แทนที่ของเดิม (1 แถวต่อเกม)
+    await a.post('/api/orders', mlOrder({ playerInputs: { uid: '987654321', zone: '4321' } }));
+    const one = await a.get('/api/me/players/mobile-legends');
+    assert.deepEqual(one.body.inputs, { uid: '987654321', zone: '4321' });
+    assert.equal((await a.get('/api/me/players')).body.length, 1);
+
+    assert.equal((await del(s, '/api/me/players/mobile-legends', a, 'https://evil.example')).status, 403);
+    assert.equal((await del(s, '/api/me/players/mobile-legends', a)).status, 200);
+    assert.equal((await a.get('/api/me/players')).body.length, 0);
+    assert.equal((await a.get('/api/me/players/mobile-legends')).status, 404);
+    assert.equal((await del(s, '/api/me/players/mobile-legends', a)).status, 404);
+  });
+
+  test('claim: token ถูก → ผูก / token ผิด หรือมีเจ้าของแล้ว → ไม่ผูก', async () => {
+    const guest = browser(s);
+    const o1 = (await guest.post('/api/orders', mlOrder())).body;
+    const o2 = (await guest.post('/api/orders', mlOrder())).body;
+    const o3 = (await guest.post('/api/orders', mlOrder())).body;
+    const a = await member(s);
+    const b = await member(s);
+
+    assert.equal((await browser(s).post('/api/me/orders/claim', [{ id: o1.id, token: o1.token }])).status, 401);
+    const first = await a.post('/api/me/orders/claim', [
+      { id: o1.id, token: o1.token },
+      { id: o2.id, token: 'f'.repeat(32) },
+      { id: 'KZNOTEXIST', token: o1.token },
+      { nonsense: true },
+    ]);
+    assert.equal(first.status, 200, first.text);
+    assert.deepEqual(first.body.claimed, [o1.id]);
+    // B มี token ถูกของ o1 แต่ o1 เป็นของ A แล้ว → ไม่ผูก, o3 ยังว่าง → ผูก
+    const second = await b.post('/api/me/orders/claim', [{ id: o1.id, token: o1.token }, { id: o3.id, token: o3.token }]);
+    assert.deepEqual(second.body.claimed, [o3.id]);
+    assert.deepEqual((await a.get('/api/me/orders')).body.map((o) => o.id), [o1.id]);
+    assert.deepEqual((await b.get('/api/me/orders')).body.map((o) => o.id), [o3.id]);
+    const all = await s.readData('orders');
+    assert.ok(!all.find((x) => x.id === o2.id).userId);
+    assert.deepEqual((await a.post('/api/me/orders/claim', [{ id: o1.id, token: o1.token }])).body.claimed, []);
+    assert.equal((await a.post('/api/me/orders/claim', { orders: 'x' })).status, 400);
+    assert.ok((await s.readData('audit')).some((x) => x.action === 'member_claim' && x.orderId === o1.id));
+  });
+
+  test('IDOR: /api/me/* เห็นเฉพาะของตัวเอง', async () => {
+    const a = await member(s);
+    const b = await member(s);
+    await a.post('/api/orders', mlOrder());
+    assert.equal((await b.get('/api/me/orders')).body.length, 0);
+    assert.equal((await b.get('/api/me/players')).body.length, 0);
+    assert.equal((await b.get('/api/me/players/mobile-legends')).status, 404);
+    assert.equal((await del(s, '/api/me/players/mobile-legends', b)).status, 404);
+    assert.equal((await a.get('/api/me/players')).body.length, 1, 'ของ A ต้องไม่ถูก B ลบ');
+    assert.equal((await b.get('/api/me')).body.email, b.email);
+  });
+
+  test('ลบบัญชี: รหัสผิด → 400 / สำเร็จ → ล้าง session/UID/ลิงก์, ออเดอร์เหลือแต่ไม่ผูก, users เหลือแบบไม่มีข้อมูล', async () => {
+    const a = await member(s);
+    const other = browser(s);
+    await other.login(a.email);
+    const order = (await a.post('/api/orders', mlOrder())).body;
+    await browser(s).post('/api/auth/forgot', { email: a.email });
+
+    const wrong = await a.post('/api/me/delete', { password: 'not-my-password' });
+    assert.equal(wrong.status, 400);
+    assert.equal(wrong.body.error, 'รหัสผ่านไม่ถูกต้อง');
+    assert.equal((await a.get('/api/me')).status, 200);
+
+    const id = (await s.readData('users')).find((u) => u.email === a.email).id;
+    const ok = await a.post('/api/me/delete', { password: GOOD_PW });
+    assert.equal(ok.status, 200, ok.text);
+    assert.ok(ok.setCookies.some((c) => /^koinz_sid=;/.test(c)));
+    assert.equal((await a.get('/api/me')).status, 401);
+    assert.equal((await other.get('/api/me')).status, 401);
+    const login = await browser(s).login(a.email);
+    assert.equal(login.status, 401);
+    assert.equal(login.body.error, BAD_LOGIN);
+
+    const u = (await s.readData('users')).find((x) => x.id === id);
+    assert.equal(u.email, `deleted-${id}@invalid`);
+    assert.ok(u.deleted_at ?? u.deletedAt);
+    assert.ok(!JSON.stringify(u).includes('scrypt$'));
+    const uid = (x) => x.user_id ?? x.userId;
+    assert.ok(!((await s.readData('sessions')) || []).some((x) => uid(x) === id));
+    assert.ok(!((await s.readData('saved_players')) || []).some((x) => uid(x) === id));
+    assert.ok(!((await s.readData('password_resets')) || []).some((x) => uid(x) === id));
+    const kept = (await s.readData('orders')).find((x) => x.id === order.id);
+    assert.ok(kept, 'ออเดอร์ต้องยังอยู่');
+    assert.ok(!kept.userId);
+    assert.equal((await browser(s).signup(a.email)).status, 201, 'สมัครใหม่ด้วยอีเมลเดิมได้');
+    assert.ok((await s.readData('audit')).some((x) => x.action === 'member_deleted'));
+  });
+
+  test('session สมาชิกเรียก /api/admin/orders → 401 (ระบบแอดมินแยกจากสมาชิก)', async () => {
+    const a = await member(s);
+    assert.equal((await a.get('/api/admin/orders')).status, 401);
+    assert.equal((await a.get('/api/admin/orders', { authorization: `Bearer ${a.jar.koinz_sid}` })).status, 401);
+  });
+
+  test('ต้องล็อกอินก่อน: /api/me/* ไม่มี session → 401', async () => {
+    const b = browser(s);
+    for (const [m, url] of [['GET', '/api/me/orders'], ['GET', '/api/me/players'], ['POST', '/api/me/password'], ['POST', '/api/me/delete']]) {
+      const r = m === 'GET' ? await b.get(url) : await b.post(url, {});
+      assert.equal(r.status, 401, url);
+    }
+  });
+});
+
+describe('Auth Phase 2 — ปิดอีเมล / จำกัดต่ออีเมล / Resend / production', () => {
+  test('ไม่ตั้ง MAIL_PROVIDER → passwordResetEnabled false และ forgot ตอบ 503 ให้ติดต่อร้าน', async () => {
+    const s = await startServer();
+    try {
+      assert.equal((await s.req('GET', '/api/config')).body.passwordResetEnabled, false);
+      const r = await browser(s).post('/api/auth/forgot', { email: newEmail() });
+      assert.equal(r.status, 503);
+      assert.match(r.body.error, /ติดต่อร้านทาง LINE/);
+    } finally {
+      await s.stop();
+    }
+  });
+
+  test('ต่ออีเมล: ขอซ้ำภายใน 60 วินาที → ไม่ส่งอีเมลรอบ 2 แต่ตอบเหมือนเดิม', async () => {
+    const s = await startServer({ ...MAIL_ENV, RATE_LIMIT_OFF: '0' });
+    try {
+      const a = await member(s);
+      const first = await browser(s).post('/api/auth/forgot', { email: a.email });
+      const second = await browser(s).post('/api/auth/forgot', { email: a.email.toUpperCase() });
+      assert.equal(first.status, 200);
+      assert.equal(first.text, second.text);
+      await nextResetToken(s, 0);
+      await pause(300);
+      assert.equal(resetTokens(s).length, 1);
+    } finally {
+      await s.stop();
+    }
+  });
+
+  test('MAIL_PROVIDER=resend → POST /emails พร้อม Bearer key; log ไม่มี key/อีเมลเต็ม', async () => {
+    const sent = [];
+    const resend = await fakeServer((app) => app.post('/emails', (req, res) => {
+      sent.push({ auth: req.headers.authorization, body: req.body });
+      res.json({ id: 'email_1' });
+    }));
+    const key = 're_test_' + crypto.randomBytes(8).toString('hex');
+    const s = await startServer({
+      MAIL_PROVIDER: 'resend', RESEND_API_KEY: key, RESEND_API_URL: resend.url,
+      MAIL_FROM: 'Koinz <no-reply@koinz.test>', PUBLIC_URL: 'https://koinz.test',
+    });
+    try {
+      assert.equal((await s.req('GET', '/api/config')).body.passwordResetEnabled, true);
+      const a = await member(s);
+      assert.equal((await browser(s).post('/api/auth/forgot', { email: a.email })).status, 200);
+      assert.ok(await waitFor(() => sent.length === 1, 3000, 20));
+      assert.equal(sent[0].auth, `Bearer ${key}`);
+      assert.deepEqual(sent[0].body.to, [a.email]);
+      assert.equal(sent[0].body.from, 'Koinz <no-reply@koinz.test>');
+      assert.match(sent[0].body.text, /https:\/\/koinz\.test\/reset\.html#token=[A-Za-z0-9_-]{43}/);
+      assert.ok(!s.log().includes(key));
+      assert.ok(!s.log().includes(a.email));
+    } finally {
+      await s.stop();
+      await resend.close();
+    }
+  });
+
+  test('production: MAIL_LOG_LINKS=1 ไม่มี SITE_BANNER → ไม่ยอม start / มี SITE_BANNER (staging) → ใช้โดเมน Railway ในลิงก์', async () => {
+    const secret = crypto.randomBytes(32).toString('base64url');
+    const prod = { NODE_ENV: 'production', ADMIN_PASSWORD: 'a-strong-admin-pass-99', SESSION_SECRET: secret };
+    const run = (env) => spawnSync(process.execPath, [path.join(ROOT, 'server.js')], {
+      cwd: ROOT, env: { ...process.env, ...BASE_ENV, ...prod, ...env }, encoding: 'utf8', timeout: 10000,
+    });
+    const leak = run({ MAIL_PROVIDER: 'log', MAIL_LOG_LINKS: '1' });
+    assert.equal(leak.status, 1);
+    assert.match(leak.stderr, /MAIL_LOG_LINKS/);
+    const noKey = run({ MAIL_PROVIDER: 'resend' });
+    assert.equal(noKey.status, 1);
+    assert.match(noKey.stderr, /RESEND_API_KEY/);
+    const typo = run({ MAIL_PROVIDER: 'smtp' });
+    assert.equal(typo.status, 1);
+    assert.match(typo.stderr, /MAIL_PROVIDER/);
+
+    const s = await startServer({
+      ...prod, MAIL_PROVIDER: 'log', MAIL_LOG_LINKS: '1', SITE_BANNER: 'เว็บทดสอบ — ห้ามโอนเงินจริง',
+      RAILWAY_PUBLIC_DOMAIN: 'koinz-staging.up.railway.app',
+    });
+    try {
+      assert.equal((await s.req('GET', '/api/config')).body.passwordResetEnabled, true);
+      const a = await member(s);
+      await browser(s).post('/api/auth/forgot', { email: a.email });
+      assert.ok(await waitFor(() => /https:\/\/koinz-staging\.up\.railway\.app\/reset\.html#token=/.test(s.log()), 3000, 20));
+    } finally {
+      await s.stop();
+    }
+  });
+});
