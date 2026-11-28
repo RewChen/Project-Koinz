@@ -38,6 +38,11 @@
   --st-proc-bg: #ECE5FA;
   --st-proc-fg: #553399;
 
+  /* แถบเว็บทดสอบ (SITE_BANNER) — ตัวหนังสือบนพื้น contrast ≈ 6:1 */
+  --banner-bg: #FBEFD5;
+  --banner-fg: #7A4F00;
+  --banner-line: #EFD9A8;
+
   --font: "Anuphan", "Noto Sans Thai", "Leelawadee UI", system-ui, sans-serif;
   --gutter: 22px;
 }
@@ -71,6 +76,15 @@ svg { flex: none; }
 .spacer { flex: 1; }
 
 .wrap { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 var(--gutter); }
+
+/* ---------- แถบเว็บทดสอบ (SITE_BANNER) ---------- */
+.site-banner {
+  padding: 8px var(--gutter);
+  background: var(--banner-bg);
+  color: var(--banner-fg);
+  border-bottom: 1px solid var(--banner-line);
+  font-size: 14px; font-weight: 600; text-align: center;
+}
 
 /* ---------- header / โลโก้ ---------- */
 .top { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center; padding: 22px 0 6px; }

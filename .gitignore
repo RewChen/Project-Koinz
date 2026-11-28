@@ -5,3 +5,4 @@ data/audit.json
 data/jobs.json
 data/*.tmp
 backups/
+.claude/

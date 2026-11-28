@@ -50,6 +50,7 @@ function createApp() {
       lookupEnabled: adapters.lookupEnabled(),
       autoFulfill: config.autoFulfill,
       orderTtlMinutes: config.orderTtlMinutes,
+      siteBanner: config.siteBanner,
     });
   });
 

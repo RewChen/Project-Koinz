@@ -169,6 +169,7 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | `FRONTEND_ORIGIN` | – | โดเมนหน้าร้านที่อยู่คนละที่กับ API (CORS) คั่นหลายอันด้วย `,` เช่น `https://rewchen.github.io` |
 | `TRUST_PROXY` | – | ตั้งเมื่ออยู่หลัง nginx/proxy เช่น `1` หรือ `loopback` (ให้ rate limit เห็น IP จริง) |
 | `RATE_LIMIT_OFF` | `0` | `1` = ปิด rate limit (ใช้ตอนเทสเท่านั้น) |
+| `SITE_BANNER` | – | ข้อความแถบเหลืองบนสุดของทุกหน้า เช่น `เว็บทดสอบ — ห้ามโอนเงินจริง` (ตั้งใน staging เท่านั้น ดู [`docs/staging.md`](docs/staging.md)) |
 
 ## API
 

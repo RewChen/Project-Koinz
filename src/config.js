@@ -52,6 +52,8 @@ const config = {
     .filter(Boolean),
   trustProxy: parseTrustProxy(str(env.TRUST_PROXY)),
   rateLimitOff: bool(env.RATE_LIMIT_OFF),
+  // ข้อความแถบเหลืองบนสุดของทุกหน้า (ใช้ใน staging) เว้นว่าง = ไม่แสดง
+  siteBanner: str(env.SITE_BANNER).slice(0, 200),
 };
 
 // TRUST_PROXY: ว่าง = ไม่ตั้ง, ตัวเลข = จำนวน proxy, true/false, หรือค่าอื่นของ Express เช่น loopback

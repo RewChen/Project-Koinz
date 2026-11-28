@@ -233,6 +233,7 @@ describe('Phase 1 — แคตตาล็อก ออเดอร์ หม�
     assert.equal(c.body.lookupEnabled, false);
     assert.equal(c.body.orderTtlMinutes, 15);
     assert.ok('shopLineUrl' in c.body && 'autoFulfill' in c.body);
+    assert.equal(c.body.siteBanner, '');
     const r = await s.req('POST', '/api/player/lookup', { gameSlug: 'rov', playerInputs: { uid: '1234567' } });
     assert.equal(r.status, 404);
   });
@@ -295,6 +296,21 @@ describe('Phase 1 — ออเดอร์หมดอายุ (ORDER_TTL_MINU
     const saved = (await s.readData('orders')).find((x) => x.id === id);
     assert.equal(saved.lineId, 'koinzfan');
     assert.equal(saved.customerNote, 'โอนแล้ว 18:30');
+  });
+});
+
+describe('Staging — แถบเว็บทดสอบ', () => {
+  test('SITE_BANNER ตั้งค่า → /api/config ส่งข้อความ และ common.js แสดงแถบด้วย textContent', async () => {
+    const s = await startServer({ SITE_BANNER: 'เว็บทดสอบ — ห้ามโอนเงินจริง' });
+    try {
+      assert.equal((await s.req('GET', '/api/config')).body.siteBanner, 'เว็บทดสอบ — ห้ามโอนเงินจริง');
+    } finally {
+      await s.stop();
+    }
+    const js = fs.readFileSync(path.join(ROOT, 'public/js/common.js'), 'utf8');
+    assert.match(js, /bar\.textContent = c\.siteBanner/);
+    const css = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
+    assert.match(css, /\.site-banner \{[^}]*var\(--banner-bg\)/);
   });
 });
 

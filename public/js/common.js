@@ -118,4 +118,12 @@ const myOrders = {
 const shopConfig = api('/api/config').catch(() => ({}));
 shopConfig.then((c) => {
   if (c.shopName) document.querySelectorAll('[data-shop]').forEach((el) => (el.textContent = c.shopName));
+  // แถบบนสุดของเว็บทดสอบ (ตั้ง SITE_BANNER เฉพาะ staging) — ใช้ textContent จึงไม่ต้อง esc()
+  if (c.siteBanner && !document.querySelector('.site-banner')) {
+    const bar = document.createElement('div');
+    bar.className = 'site-banner';
+    bar.setAttribute('role', 'note');
+    bar.textContent = c.siteBanner;
+    document.body.prepend(bar);
+  }
 });
