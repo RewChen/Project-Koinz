@@ -636,8 +636,8 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
         const refs = [...html.matchAll(/\s(?:href|src)="([^"]+)"/g)] // \s กัน data-shop-href="lineUrl"
           .map((m) => m[1])
           .filter((u) => !/^(https?:|\/\/|#|data:|mailto:|\$\{)/.test(u) && !u.includes('${'));
-        // game.html เป็นแค่หน้า redirect ไปหน้าแรก (?game=) ไม่มี CSS/JS ของตัวเอง
-        const isRedirect = html.includes('js/game-redirect.js');
+        // game.html / register.html เป็นแค่หน้า redirect ไม่มี CSS/JS ของตัวเอง
+        const isRedirect = /js\/[a-z-]+-redirect\.js/.test(html);
         if (!isRedirect) {
           assert.ok(refs.includes('css/style.css') && refs.includes('js/config.js') && refs.includes('js/common.js'), page);
         }
@@ -650,7 +650,7 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
       // config.js ต้องโหลดก่อน common.js
       for (const page of pages) {
         const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8');
-        if (html.includes('js/game-redirect.js')) continue;
+        if (/js\/[a-z-]+-redirect\.js/.test(html)) continue;
         assert.ok(html.indexOf('js/config.js') < html.indexOf('js/common.js'), page);
         assert.match(html, /family=Anuphan/, `${page} ต้องใช้ฟอนต์ Anuphan`);
       }
