@@ -171,6 +171,12 @@ describe('ข้อมูลร้าน Phase 1 — fillShopInfo() ใน commo
     assert.equal(name.textContent, '<img src=x onerror=alert(1)>');
     assert.equal(both.hidden, true);
     assert.equal(one.hidden, false);
+    // ชื่อที่มีตัว s (hours, lineUrl…) และแถวหลายค่าที่มีครบ → แสดง
+    const hours = el({ shopRow: 'hours' });
+    const pair = el({ shopRow: 'lineId  lineUrl' });
+    fill({ hours: '09:00–22:00 น.', lineId: 'koinz', lineUrl: 'https://line.me/R/ti/p/@koinz' }, [hours, pair]);
+    assert.equal(hours.hidden, false);
+    assert.equal(pair.hidden, false);
     const mins = el({ shopField: 'fulfillTargetMinutes' }, { text: '15' });
     fill({ fulfillTargetMinutes: 20 }, [mins]);
     assert.equal(mins.textContent, '20');
@@ -181,5 +187,52 @@ describe('ข้อมูลร้าน Phase 1 — fillShopInfo() ใน commo
     const body = src.slice(src.indexOf('function fillShopInfo'), src.indexOf('const shopConfig'));
     assert.ok(body.length > 100);
     assert.doesNotMatch(body, /innerHTML|insertAdjacentHTML|outerHTML/);
+  });
+});
+
+describe('ข้อมูลร้าน Phase 2 — about.html / refund.html', () => {
+  const PUBLIC = path.join(ROOT, 'public');
+  const read = (f) => fs.readFileSync(path.join(PUBLIC, f), 'utf8');
+
+  test('ข้อความเวลาเป็นช่องที่เติมจาก env (ไม่ hardcode ข้อมูลร้าน)', () => {
+    const about = read('about.html');
+    const refund = read('refund.html');
+    assert.match(about, /data-shop-field="fulfillTargetMinutes"/);
+    for (const f of ['lineId', 'hours', 'facebookName', 'legalName', 'dbdId']) assert.match(about, new RegExp(`data-shop-field="${f}"`), f);
+    for (const r of ['lineUrl', 'facebookUrl', 'hours', 'legalName', 'dbdId']) assert.match(about, new RegExp(`data-shop-row="${r}"`), r);
+    for (const f of ['refundHours', 'stuckOrderHours', 'termsMonth']) assert.match(refund, new RegExp(`data-shop-field="${f}"`), f);
+    assert.match(refund, /class="btn btn-red" data-shop-row="lineUrl" data-shop-href="lineUrl"[^>]*hidden/);
+    // ข้อมูลจริงของร้านต้องไม่อยู่ในไฟล์
+    for (const html of [about, refund]) assert.doesNotMatch(html, /line\.me|facebook\.com|deworldr|\d{1,2}:\d{2}/);
+  });
+
+  test('FAQ ใช้ <details><summary> 5 ข้อ เปิดข้อแรก / ขั้นตอนเป็น <ol>', () => {
+    const about = read('about.html');
+    assert.equal((about.match(/<details[\s>]/g) || []).length, 5);
+    assert.equal((about.match(/<summary>/g) || []).length, 5);
+    assert.match(about, /<details open>\s*<summary>ปกติเติมเข้าเกมนานแค่ไหน/);
+    assert.match(about, /class="steps-card"[\s\S]*?<ol>/);
+    assert.match(read('refund.html'), /<ol class="howto">/);
+  });
+
+  test('เซิร์ฟเวอร์เปิดได้ทั้งสองหน้า + ค่าตัวเลขเปลี่ยนตาม env หลัง restart', async () => {
+    const s = await startServer({ FULFILL_TARGET_MINUTES: '30', REFUND_HOURS: '12', STUCK_ORDER_HOURS: '2' });
+    try {
+      for (const p of ['/about.html', '/refund.html']) assert.equal((await s.req('GET', p)).status, 200, p);
+      const { shop } = (await s.req('GET', '/api/config')).body;
+      assert.deepEqual([shop.fulfillTargetMinutes, shop.refundHours, shop.stuckOrderHours], [30, 12, 2]);
+    } finally {
+      await s.stop();
+    }
+  });
+
+  test('ฉบับเดือนจาก TERMS_VERSION → ชื่อเดือนภาษาไทย (ค่าผิดรูปแบบ = คงข้อความเดิม)', () => {
+    const fill = loadCommon();
+    const a = el({ shopField: 'termsMonth' }, { text: 'เดิม' });
+    fill({ termsVersion: '2026-11' }, [a]);
+    assert.equal(a.textContent, 'พฤศจิกายน 2026');
+    const b = el({ shopField: 'termsMonth' }, { text: 'เดิม' });
+    fill({ termsVersion: '2026-13' }, [b]);
+    assert.equal(b.textContent, 'เดิม');
   });
 });

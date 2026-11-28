@@ -733,6 +733,76 @@ svg { flex: none; }
   .doc h1 { font-size: 36px; }
 }
 
+/* ---------- หน้าข้อมูลร้าน (about.html / refund.html) ---------- */
+.info-page { max-width: 720px; padding: 16px 0 40px; }
+.info-hero h1 { font-size: 28px; line-height: 1.25; }
+.info-hero > p { margin-top: 10px; font-size: 15px; line-height: 1.65; color: var(--ink-2); }
+.info-hero .updated { margin-top: 4px; font-size: 13px; color: var(--muted); }
+.info-section { margin-top: 22px; }
+.info-section h2 { margin-bottom: 10px; font-size: 17px; font-weight: 600; }
+
+.steps-card { margin-top: 18px; padding: 6px 18px; border-radius: 24px; background: var(--card); }
+.steps-card ol { list-style: none; margin: 0; padding: 0; }
+.steps-card li { display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+.steps-card li:last-child { border-bottom: 0; }
+.steps-card b { display: block; font-size: 15px; font-weight: 600; }
+.steps-card li > span:last-child { font-size: 13px; color: var(--ink-2); line-height: 1.55; }
+.step-num {
+  flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--ink); color: var(--on-dark); font-size: 13px; font-weight: 700;
+}
+
+.contact-list { display: flex; flex-direction: column; gap: 8px; }
+.contact-card {
+  display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 14px; border-radius: 22px;
+  background: var(--card); color: var(--ink); text-decoration: none;
+}
+a.contact-card:hover { color: var(--ink); background: var(--row-hi); }
+.contact-ico { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--paper); color: var(--ink); }
+.contact-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.contact-text b { display: block; font-size: 15px; font-weight: 600; }
+.contact-text > span { font-size: 13px; color: var(--ink-2); line-height: 1.5; }
+.contact-chev { color: var(--muted); font-size: 18px; }
+.contact-note { background: transparent; border: 1px solid var(--line); }
+.contact-note .contact-ico { background: var(--card); }
+
+.faq { padding: 0 16px; border-radius: 22px; background: var(--card); }
+.faq details { border-bottom: 1px solid var(--line-soft); }
+.faq details:last-child { border-bottom: 0; }
+.faq summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 52px; padding: 6px 0;
+  font-size: 14px; font-weight: 600; cursor: pointer; list-style: none;
+}
+.faq summary::-webkit-details-marker { display: none; }
+/* + / − เป็นของตกแต่ง (สถานะเปิด/ปิดมาจาก <details> เอง) — alt text ว่างให้ screen reader ข้าม */
+.faq summary::after { content: "+"; content: "+" / ""; flex: none; font-size: 18px; font-weight: 400; color: var(--muted); }
+.faq details[open] summary::after { content: "−"; content: "−" / ""; }
+.faq details p { margin: -4px 0 14px; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+
+.legal-line { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 22px; font-size: 13px; color: var(--muted); }
+
+.refund-sum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 18px; }
+.refund-sum-item { padding: 14px 8px; border-radius: 20px; background: var(--card); text-align: center; }
+.refund-sum-item .big { font-size: 20px; font-weight: 700; line-height: 1.3; }
+.refund-sum-item p + p { margin-top: 2px; font-size: 12px; color: var(--ink-2); }
+.rules { list-style: none; margin: 0; padding: 4px 16px; border-radius: 22px; background: var(--card); }
+.rules li { display: flex; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); font-size: 14px; line-height: 1.55; }
+.rules li:last-child { border-bottom: 0; }
+.rules svg { flex: none; margin-top: 2px; }
+.rules-yes svg { color: var(--green); }
+.rules-no { background: transparent; border: 1px solid var(--line); }
+.rules-no svg { margin-top: 3px; color: var(--red-ink); }
+.howto { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.7; }
+.howto li + li { margin-top: 4px; }
+.info-cta { margin-top: 26px; }
+.info-cta p { margin-top: 12px; text-align: center; font-size: 12px; color: var(--muted); }
+@media (min-width: 900px) {
+  .info-page { padding: 28px 0 64px; }
+  .info-hero h1 { font-size: 36px; }
+  .info-cta .btn { max-width: 360px; }
+  .info-cta p { text-align: left; }
+}
+
 @media (max-width: 1080px) {
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

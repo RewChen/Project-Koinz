@@ -27,7 +27,7 @@ public/js/config.js  window.KOINZ_API (ค่าว่าง = โดเมน�
 public/js/pile.js    renderPile(svg, level, label) + pileLevel(packages, id) — กองเหรียญ voxel
 public/index.html    หน้าแรก + เติมเกม (?game=<slug>) · game.html เป็นแค่ redirect · order.html มี 4 มุมมองตามสถานะ
 public/login|signup|forgot|reset|account.html  หน้าสมาชิก (โครงเปล่า วาดด้วย js/auth.js และ js/account.js) · บน GitHub Pages ส่งไปเว็บหลัก
-public/terms.html, privacy.html  เงื่อนไข / นโยบายความเป็นส่วนตัว (ร่าง) · สคริปต์ทุกหน้าอยู่ใน public/js/*.js (index → shop.js, order → order.js, admin → admin.js)
+public/terms.html, privacy.html, refund.html, about.html  เงื่อนไข / ความเป็นส่วนตัว / คืนเงิน (ร่าง) / เกี่ยวกับร้าน — ข้อมูลร้านใส่ผ่าน data-shop-field ห้าม hardcode · สคริปต์ทุกหน้าอยู่ใน public/js/*.js (index → shop.js, order → order.js, admin → admin.js)
 test/helpers.js      startServer() (spawn server.js + โฟลเดอร์ข้อมูล/DB ชั่วคราว), fakeServer() สำหรับ supplier/lookup/alert
 test/*.test.js       api.test.js (ร้าน/หลังบ้าน) · auth.test.js (สมาชิก) · shop-info.test.js (ข้อมูลร้าน) — npm test รันเฉพาะ test/*.test.js
 .github/workflows/deploy.yml   deploy public/ ขึ้น Pages (ไม่รวม admin.html)

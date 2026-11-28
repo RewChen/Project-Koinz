@@ -102,6 +102,7 @@ koinz/
 │   ├── reset.html         # ตั้งรหัสใหม่จากลิงก์อีเมล (#token=…) / ?mode=change = เปลี่ยนรหัสผ่าน
 │   ├── account.html       # บัญชีของฉัน: ผูกออเดอร์ในเครื่อง, UID ที่บันทึก, ออเดอร์, ความปลอดภัย, ลบบัญชี
 │   ├── terms.html / privacy.html   # เงื่อนไขการใช้งาน / นโยบายความเป็นส่วนตัว (ร่าง — แก้แล้วเปลี่ยน TERMS_VERSION)
+│   ├── about.html / refund.html    # เกี่ยวกับร้าน + ติดต่อ + FAQ / นโยบายคืนเงิน (ข้อมูลร้านจาก env ผ่าน fillShopInfo())
 │   ├── admin.html         # หลังบ้าน (ไม่ขึ้น Pages)
 │   ├── css/style.css      # design tokens (:root) + ทุก component · breakpoint เดียว 900px
 │   └── js/

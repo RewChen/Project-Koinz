@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>นโยบายคืนเงิน — Koinz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- ร่างเริ่มต้น: เจ้าของร้านควรตรวจก่อนใช้จริง · ต้องไม่ขัดกับข้อ 4 ใน terms.html
+       ตัวเลขเวลา (REFUND_HOURS, STUCK_ORDER_HOURS) และฉบับเดือน (TERMS_VERSION) มาจาก /api/config → fillShopInfo() -->
+  <div class="wrap">
+    <header class="top">
+      <a class="back-round m-only" href="about.html" aria-label="กลับไปหน้าเกี่ยวกับร้าน"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></a>
+      <a class="logo" href="./"><span data-shop>Koinz</span></a>
+      <nav class="navlinks d-only" aria-label="เมนูหลัก">
+        <a href="about.html">เกี่ยวกับร้าน / ติดต่อ</a>
+        <a href="./">กลับไปเติมเกม</a>
+      </nav>
+    </header>
+
+    <main class="info-page">
+      <section class="info-hero">
+        <h1>นโยบายคืนเงิน</h1>
+        <p class="updated">ฉบับเดือน<span data-shop-field="termsMonth">พฤศจิกายน 2026</span></p>
+      </section>
+
+      <section class="refund-sum" aria-label="สรุปสั้น">
+        <div class="refund-sum-item"><p class="big">เต็มจำนวน</p><p>เมื่อเติมไม่สำเร็จ</p></div>
+        <div class="refund-sum-item"><p class="big"><span data-shop-field="refundHours">24</span> ชม.</p><p>คืนภายใน</p></div>
+        <div class="refund-sum-item"><p class="big">บัญชีเดิม</p><p>ที่ใช้โอนมา</p></div>
+      </section>
+
+      <section class="info-section" aria-labelledby="refund-yes">
+        <h2 id="refund-yes">กรณีที่คืนเงิน</h2>
+        <ul class="rules rules-yes">
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>ร้านเติมเข้าเกมไม่สำเร็จ ไม่ว่าเพราะระบบของร้านหรือผู้ให้บริการ</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>ร้านไม่มีแพ็กเกจที่สั่งแล้ว หรือยกเลิกออเดอร์เอง</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>โอนเงินเกินยอดของออเดอร์ (คืนส่วนที่เกิน)</li>
+        </ul>
+      </section>
+
+      <section class="info-section" aria-labelledby="refund-no">
+        <h2 id="refund-no">กรณีที่คืนเงินไม่ได้</h2>
+        <ul class="rules rules-no">
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>เติมสำเร็จแล้ว แต่อยากเปลี่ยนแพ็กเกจหรือเปลี่ยนใจ</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>เติมเข้า UID ที่ลูกค้ากรอกผิดเอง และร้านเติมไปแล้ว</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>ไอเทมถูกใช้ไปแล้วในเกม</li>
+        </ul>
+      </section>
+
+      <section class="info-section" aria-labelledby="refund-how">
+        <h2 id="refund-how">ขอคืนเงินอย่างไร</h2>
+        <ol class="howto">
+          <li>เปิดลิงก์ออเดอร์ ถ้าขึ้น "เติมไม่สำเร็จ" ร้านจะคืนเงินให้เองโดยไม่ต้องขอ</li>
+          <li>ถ้าโอนแล้วแต่ออเดอร์ยังไม่ขยับเกิน <span data-shop-field="stuckOrderHours">1</span> ชั่วโมงในเวลาตอบแชท ทัก LINE ร้านพร้อมเลขออเดอร์และสลิป</li>
+          <li>ร้านตรวจยอดแล้วคืนเงินไปที่บัญชีที่ใช้โอน และแจ้งในหน้าออเดอร์ว่า "คืนเงินแล้ว"</li>
+        </ol>
+      </section>
+
+      <div class="info-cta">
+        <a class="btn btn-red" data-shop-row="lineUrl" data-shop-href="lineUrl" target="_blank" rel="noopener" hidden>ทักร้านทาง LINE</a>
+        <p>ร่างเริ่มต้น เจ้าของร้านควรตรวจก่อนใช้จริง</p>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/common.js"></script>
+</body>
+</html>

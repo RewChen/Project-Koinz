@@ -175,15 +175,21 @@ function httpsOnly(v) {
 //   data-shop-field="lineId"   → ข้อความ (ค่าว่าง = คงข้อความเดิมใน HTML ไว้ เช่นค่าตั้งต้น)
 //   data-shop-href="lineUrl"   → href (เฉพาะ https:// ไม่งั้นเอา href ออก)
 //   data-shop-row="facebookUrl" → ซ่อนทั้งแถวถ้าค่าว่าง (หลายค่าคั่นเว้นวรรค = ต้องมีครบทุกค่า)
+// ค่าที่คำนวณเพิ่ม: termsMonth = TERMS_VERSION แบบ 2026-11 → "พฤศจิกายน 2026"
 function fillShopInfo(shop, root = document) {
-  const s = shop || {};
+  const s = { ...(shop || {}) };
+  const m = /^(\d{4})-(\d{2})$/.exec(String(s.termsVersion || ''));
+  if (m && +m[2] >= 1 && +m[2] <= 12) {
+    s.termsMonth = new Date(Date.UTC(+m[1], +m[2] - 1, 15))
+      .toLocaleDateString('th-TH-u-ca-gregory', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  }
   const val = (k) => {
     const v = s[k];
     if (/Url$/.test(k)) return httpsOnly(v);
     return v === undefined || v === null ? '' : String(v).trim();
   };
   root.querySelectorAll('[data-shop-row]').forEach((el) => {
-    el.hidden = !el.dataset.shopRow.split(/s+/).filter(Boolean).every((k) => val(k));
+    el.hidden = !el.dataset.shopRow.split(/\s+/).filter(Boolean).every((k) => val(k));
   });
   root.querySelectorAll('[data-shop-field]').forEach((el) => {
     const v = val(el.dataset.shopField);

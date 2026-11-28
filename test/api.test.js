@@ -633,7 +633,7 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
       assert.equal(index.status, 200);
       for (const page of pages) {
         const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8');
-        const refs = [...html.matchAll(/(?:href|src)="([^"]+)"/g)]
+        const refs = [...html.matchAll(/\s(?:href|src)="([^"]+)"/g)] // \s กัน data-shop-href="lineUrl"
           .map((m) => m[1])
           .filter((u) => !/^(https?:|\/\/|#|data:|mailto:|\$\{)/.test(u) && !u.includes('${'));
         // game.html เป็นแค่หน้า redirect ไปหน้าแรก (?game=) ไม่มี CSS/JS ของตัวเอง
