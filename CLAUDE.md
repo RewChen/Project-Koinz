@@ -23,13 +23,13 @@ src/adapters.js      lookupNickname, fulfillTopup, sendAlert
 src/security.js      rate limit (hit() ต่อ key), security headers + CSP/HSTS, CORS, sameOriginOnly (กัน CSRF), noStore
 src/auth/            สมาชิก: password.js (scrypt + นโยบาย + data/common-passwords.txt), session.js (cookie koinz_sid, เก็บ sha256), members.js (สมัคร/ล็อกอิน/ล็อกบัญชี), routes.js (/api/auth/*, /api/me/*)
 src/app.js           createApp(): ทุก route
-public/js/config.js  window.KOINZ_API (ค่าว่าง = โดเมนเดียวกัน) · common.js มี api(), apiUrl(), esc(), STATUS, ICON, remember, playerText()
+public/js/config.js  window.KOINZ_API (ค่าว่าง = โดเมนเดียวกัน) · common.js มี api(), apiUrl(), esc(), STATUS, ICON, remember, playerText(), fillShopInfo()
 public/js/pile.js    renderPile(svg, level, label) + pileLevel(packages, id) — กองเหรียญ voxel
 public/index.html    หน้าแรก + เติมเกม (?game=<slug>) · game.html เป็นแค่ redirect · order.html มี 4 มุมมองตามสถานะ
 public/login|signup|forgot|reset|account.html  หน้าสมาชิก (โครงเปล่า วาดด้วย js/auth.js และ js/account.js) · บน GitHub Pages ส่งไปเว็บหลัก
 public/terms.html, privacy.html  เงื่อนไข / นโยบายความเป็นส่วนตัว (ร่าง) · สคริปต์ทุกหน้าอยู่ใน public/js/*.js (index → shop.js, order → order.js, admin → admin.js)
 test/helpers.js      startServer() (spawn server.js + โฟลเดอร์ข้อมูล/DB ชั่วคราว), fakeServer() สำหรับ supplier/lookup/alert
-test/*.test.js       api.test.js (ร้าน/หลังบ้าน) · auth.test.js (สมาชิก) — npm test รันเฉพาะ test/*.test.js
+test/*.test.js       api.test.js (ร้าน/หลังบ้าน) · auth.test.js (สมาชิก) · shop-info.test.js (ข้อมูลร้าน) — npm test รันเฉพาะ test/*.test.js
 .github/workflows/deploy.yml   deploy public/ ขึ้น Pages (ไม่รวม admin.html)
 railway.json         deploy จริงบน Railway (Dockerfile stage prod, healthcheck /api/config, 1 instance) · ตัวแปรอยู่ใน docs/railway.env.example
 ```

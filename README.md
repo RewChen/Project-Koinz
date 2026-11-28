@@ -106,7 +106,7 @@ koinz/
 │   ├── css/style.css      # design tokens (:root) + ทุก component · breakpoint เดียว 900px
 │   └── js/
 │       ├── config.js      # URL ของ API (ค่าว่าง = โดเมนเดียวกัน)
-│       ├── common.js      # api(), esc(), ไอคอน SVG, remember (จำ UID ต่อเกม), myOrders, memberStatus(), safeNext()
+│       ├── common.js      # api(), esc(), ไอคอน SVG, remember (จำ UID ต่อเกม), myOrders, memberStatus(), safeNext(), fillShopInfo() (ข้อมูลร้านจาก /api/config → data-shop-field)
 │       ├── shop.js / order.js / admin.js   # สคริปต์ของ index.html / order.html / admin.html (CSP ห้าม inline script)
 │       ├── auth.js        # หน้า login / signup / forgot / reset
 │       ├── account.js     # หน้า account
@@ -126,7 +126,7 @@ koinz/
 ├── compose.yaml           # app + db (ใช้ร่วม)
 ├── compose.override.yaml  # dev: bind mount, port 3000/5432, Adminer
 ├── compose.prod.yaml      # prod: nginx port 80, NODE_ENV=production, TRUST_PROXY=1
-├── test/                  # helpers.js (เปิด server ทดสอบ) · api.test.js · auth.test.js (ไฟล์ JSON หรือ PostgreSQL)
+├── test/                  # helpers.js (เปิด server ทดสอบ) · api.test.js · auth.test.js · shop-info.test.js (ไฟล์ JSON หรือ PostgreSQL)
 └── .github/workflows/deploy.yml   # deploy หน้าร้านขึ้น GitHub Pages
 ```
 
@@ -169,7 +169,16 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | `POSTGRES_PASSWORD` | – | รหัสผ่าน PostgreSQL สำหรับ Docker Compose (จำเป็นเมื่อใช้ Docker) |
 | `TEST_DATABASE_URL` | – | ใช้กับ `npm run test:pg` เท่านั้น: เทสจะสร้าง/ลบฐานข้อมูลชั่วคราวผ่าน connection นี้ |
 | `ORDER_TTL_MINUTES` | `15` | เวลาให้ลูกค้าโอน (นาที, ใส่ทศนิยมได้) |
-| `SHOP_LINE_URL` | – | ลิงก์ LINE ร้าน แสดงในหน้าออเดอร์ |
+| `SHOP_LINE_URL` | – | ลิงก์ LINE ร้าน (ต้องเป็น `https://`) แสดงในหน้าออเดอร์ / ติดต่อ / คืนเงิน |
+| `SHOP_LINE_ID` | – | LINE ID ที่แสดงเป็นข้อความในหน้าเกี่ยวกับร้าน เช่น `@koinz` (ว่าง = ซ่อนแถว) |
+| `SHOP_FACEBOOK_URL` | – | ลิงก์เพจ Facebook (ต้องเป็น `https://` ไม่งั้นไม่แสดง) |
+| `SHOP_FACEBOOK_NAME` | – | ชื่อเพจที่แสดง (ว่าง = "เพจ Facebook") |
+| `SHOP_HOURS` | – | เวลาตอบแชท เช่น `ทุกวัน 10:00–22:00` (ว่าง = ซ่อนกล่องเวลา) |
+| `SHOP_LEGAL_NAME` | – | ชื่อผู้ประกอบการ / บริษัท (บรรทัดท้ายหน้าเกี่ยวกับร้าน) |
+| `SHOP_DBD_ID` | – | เลขทะเบียนพาณิชย์อิเล็กทรอนิกส์ (ถ้ามี) |
+| `FULFILL_TARGET_MINUTES` | `15` | เวลาเติมโดยประมาณในเวลาทำการ (นาที) ที่แสดงในหน้าเกี่ยวกับร้าน |
+| `REFUND_HOURS` | `24` | คืนเงินภายในกี่ชั่วโมง (หน้านโยบายคืนเงิน) |
+| `STUCK_ORDER_HOURS` | `1` | โอนแล้วสถานะไม่ขยับเกินกี่ชั่วโมงให้ลูกค้าทักร้าน |
 | `PAYMENT_WEBHOOK_SECRET` | – | รหัสลับตรวจลายเซ็น webhook ชำระเงิน — เว้นว่าง = ปิด webhook (404) |
 | `SUPPLIER_API_URL` | – | URL ของ supplier เติมเกม (ต้องตั้งคู่กับ KEY ถึงจะเปิดเติมอัตโนมัติ) |
 | `SUPPLIER_API_KEY` | – | API key ของ supplier (ส่งเป็น `Authorization: Bearer`) |

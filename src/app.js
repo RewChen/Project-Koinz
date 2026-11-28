@@ -55,6 +55,21 @@ function createApp() {
       siteBanner: config.siteBanner,
       passwordResetEnabled: config.passwordResetEnabled,
       lineLoginEnabled: config.lineLoginEnabled,
+      // ข้อมูลร้านที่หน้าเว็บเติมด้วย fillShopInfo() — มีแต่ข้อมูลเปิดเผย (มีเทสเช็คว่าไม่มีความลับหลุด)
+      shop: {
+        name: config.shopName,
+        lineId: config.shopLineId,
+        lineUrl: config.shopLineUrl,
+        facebookUrl: config.shopFacebookUrl,
+        facebookName: config.shopFacebookName,
+        hours: config.shopHours,
+        legalName: config.shopLegalName,
+        dbdId: config.shopDbdId,
+        fulfillTargetMinutes: config.fulfillTargetMinutes,
+        refundHours: config.refundHours,
+        stuckOrderHours: config.stuckOrderHours,
+        termsVersion: config.termsVersion,
+      },
     });
   });
 

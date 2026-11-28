@@ -161,9 +161,45 @@ const myOrders = {
   },
 };
 
+// ลิงก์ที่มาจากค่าตั้งค่าร้าน: รับเฉพาะ https:// (scheme อื่นทิ้งหมด — กันอีกชั้น แม้เซิร์ฟเวอร์กรองแล้ว)
+function httpsOnly(v) {
+  try {
+    const u = new URL(String(v || ''));
+    return u.protocol === 'https:' && !u.username && !u.password ? u.href : '';
+  } catch {
+    return '';
+  }
+}
+
+// ข้อมูลร้าน (/api/config → shop) ลงหน้าเว็บ — ใช้ textContent เท่านั้น
+//   data-shop-field="lineId"   → ข้อความ (ค่าว่าง = คงข้อความเดิมใน HTML ไว้ เช่นค่าตั้งต้น)
+//   data-shop-href="lineUrl"   → href (เฉพาะ https:// ไม่งั้นเอา href ออก)
+//   data-shop-row="facebookUrl" → ซ่อนทั้งแถวถ้าค่าว่าง (หลายค่าคั่นเว้นวรรค = ต้องมีครบทุกค่า)
+function fillShopInfo(shop, root = document) {
+  const s = shop || {};
+  const val = (k) => {
+    const v = s[k];
+    if (/Url$/.test(k)) return httpsOnly(v);
+    return v === undefined || v === null ? '' : String(v).trim();
+  };
+  root.querySelectorAll('[data-shop-row]').forEach((el) => {
+    el.hidden = !el.dataset.shopRow.split(/s+/).filter(Boolean).every((k) => val(k));
+  });
+  root.querySelectorAll('[data-shop-field]').forEach((el) => {
+    const v = val(el.dataset.shopField);
+    if (v) el.textContent = v;
+  });
+  root.querySelectorAll('[data-shop-href]').forEach((el) => {
+    const v = val(el.dataset.shopHref);
+    if (v) el.href = v;
+    else el.removeAttribute('href');
+  });
+}
+
 // ค่าตั้งค่าร้านจาก .env (หน้าอื่นใช้ shopConfig.then(...) ได้)
 const shopConfig = api('/api/config').catch(() => ({}));
 shopConfig.then((c) => {
+  fillShopInfo(c.shop);
   if (c.shopName) document.querySelectorAll('[data-shop]').forEach((el) => (el.textContent = c.shopName));
   // แถบบนสุดของเว็บทดสอบ (ตั้ง SITE_BANNER เฉพาะ staging) — ใช้ textContent จึงไม่ต้อง esc()
   if (c.siteBanner && !document.querySelector('.site-banner')) {

@@ -10,6 +10,20 @@ const num = (v, d) => {
   return v === undefined || v === '' || !Number.isFinite(n) ? d : n;
 };
 const bool = (v) => /^(1|true|yes|on)$/i.test(String(v || '').trim());
+// ตัวเลขที่ต้องมากกว่า 0 (ค่าผิด/ติดลบ → ค่าเริ่มต้น)
+const pos = (v, d) => {
+  const n = num(v, d);
+  return n > 0 ? n : d;
+};
+// ลิงก์ที่หน้าเว็บแสดงให้ลูกค้ากด: รับเฉพาะ https:// (ไม่มี user:pass) — ค่าอื่น (javascript:, http:, ข้อความ) = ไม่แสดง
+const httpsUrl = (v) => {
+  try {
+    const u = new URL(str(v));
+    return u.protocol === 'https:' && !u.username && !u.password ? u.href : '';
+  } catch {
+    return '';
+  }
+};
 
 const DEFAULT_ADMIN_PASSWORD = 'admin1234';
 
@@ -27,7 +41,18 @@ const config = {
 
   // ออเดอร์
   orderTtlMinutes: num(env.ORDER_TTL_MINUTES, 15),
-  shopLineUrl: str(env.SHOP_LINE_URL),
+  shopLineUrl: httpsUrl(env.SHOP_LINE_URL),
+
+  // ข้อมูลร้าน (หน้าเกี่ยวกับร้าน / นโยบายคืนเงิน) — เป็นข้อมูลเปิดเผย ส่งออกใน /api/config ใต้ key shop
+  shopLineId: str(env.SHOP_LINE_ID).slice(0, 60),
+  shopFacebookUrl: httpsUrl(env.SHOP_FACEBOOK_URL),
+  shopFacebookName: str(env.SHOP_FACEBOOK_NAME).slice(0, 100),
+  shopHours: str(env.SHOP_HOURS).slice(0, 100),
+  shopLegalName: str(env.SHOP_LEGAL_NAME).slice(0, 150),
+  shopDbdId: str(env.SHOP_DBD_ID).slice(0, 40),
+  fulfillTargetMinutes: pos(env.FULFILL_TARGET_MINUTES, 15),
+  refundHours: pos(env.REFUND_HOURS, 24),
+  stuckOrderHours: pos(env.STUCK_ORDER_HOURS, 1),
 
   // ตรวจชื่อในเกม
   lookupApiUrl: str(env.LOOKUP_API_URL),
