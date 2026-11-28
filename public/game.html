@@ -5,11 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Koinz</title>
   <meta name="robots" content="noindex">
-  <script>
-    // หน้าเติมเกมรวมอยู่ในหน้าแรกแล้ว: game.html?slug=x → ./?game=x
-    const slug = new URLSearchParams(location.search).get('slug');
-    location.replace('./' + (slug ? '?game=' + encodeURIComponent(slug) : ''));
-  </script>
+  <script src="js/game-redirect.js"></script>
 </head>
 <body>
   <p><a href="./">ไปหน้าเติมเกม</a></p>

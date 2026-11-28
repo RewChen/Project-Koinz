@@ -234,7 +234,7 @@
         ${meterHtml(true)}
         <label class="check-row">
           <input type="checkbox" id="terms" required aria-describedby="err">
-          <span>ยอมรับเงื่อนไขการใช้งานและนโยบายความเป็นส่วนตัว (จำเป็น)</span>
+          <span>ยอมรับ<a href="terms.html" target="_blank" rel="noopener">เงื่อนไขการใช้งาน</a>และ<a href="privacy.html" target="_blank" rel="noopener">นโยบายความเป็นส่วนตัว</a> (จำเป็น)</span>
         </label>
         <label class="check-row soft">
           <input type="checkbox" id="marketing">

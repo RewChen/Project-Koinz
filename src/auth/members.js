@@ -46,6 +46,8 @@ function normalizeEmail(v) {
   if (typeof v !== 'string') return null;
   const e = v.trim().toLowerCase();
   if (e.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return null;
+  // กันชั้นที่ 2 (หน้าเว็บ esc() ทุกที่อยู่แล้ว): อีเมลจริงไม่มีอักขระ HTML/quote — เหมือน UID ใน catalog.validateInputs
+  if (/[<>"'`\\]/.test(e)) return null;
   return e;
 }
 

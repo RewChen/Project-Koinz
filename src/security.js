@@ -47,13 +47,30 @@ const limits = {
   forgot: rateLimit('forgot', 10, HOUR),
 };
 
+// CSP: สคริปต์มาจากไฟล์ของเว็บเท่านั้น (ไม่มี inline script) · style inline ยังใช้ได้ (สีเกม --c, ค่าจาก JS)
+// รูป data: = QR PromptPay · ฟอนต์ Anuphan จาก Google Fonts
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  'font-src https://fonts.gstatic.com',
+  "img-src 'self' data:",
+  "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+].join('; ');
+
 function securityHeaders(req, res, next) {
   res.set({
+    'Content-Security-Policy': CSP,
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'same-origin',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
   });
+  // HTTPS เท่านั้นบน production (180 วัน) — เครื่อง dev เป็น http จึงไม่ตั้ง
+  if (config.isProduction) res.set('Strict-Transport-Security', 'max-age=15552000');
   next();
 }
 

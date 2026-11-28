@@ -617,7 +617,8 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
   const pages = fs.readdirSync(PUBLIC).filter((f) => f.endsWith('.html'));
 
   test('ไม่มี path แบบ absolute ใน public/ (รันใต้ /Project-Koinz/ ได้)', () => {
-    for (const page of pages) {
+    const scripts = fs.readdirSync(path.join(PUBLIC, 'js')).map((f) => `js/${f}`);
+    for (const page of [...pages, ...scripts]) {
       const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8');
       const bad = html.match(/(?:href|src)="\/(?!\/)[^"]*"|location\.href\s*=\s*[`'"]\//g);
       assert.equal(bad, null, `${page}: ${bad}`);
@@ -636,7 +637,7 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
           .map((m) => m[1])
           .filter((u) => !/^(https?:|\/\/|#|data:|mailto:|\$\{)/.test(u) && !u.includes('${'));
         // game.html เป็นแค่หน้า redirect ไปหน้าแรก (?game=) ไม่มี CSS/JS ของตัวเอง
-        const isRedirect = /location\.replace\(/.test(html);
+        const isRedirect = html.includes('js/game-redirect.js');
         if (!isRedirect) {
           assert.ok(refs.includes('css/style.css') && refs.includes('js/config.js') && refs.includes('js/common.js'), page);
         }
@@ -649,7 +650,7 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
       // config.js ต้องโหลดก่อน common.js
       for (const page of pages) {
         const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8');
-        if (/location\.replace\(/.test(html)) continue;
+        if (html.includes('js/game-redirect.js')) continue;
         assert.ok(html.indexOf('js/config.js') < html.indexOf('js/common.js'), page);
         assert.match(html, /family=Anuphan/, `${page} ต้องใช้ฟอนต์ Anuphan`);
       }

@@ -355,7 +355,9 @@ function createApp() {
   app.use((err, req, res, next) => {
     if (err.type === 'entity.parse.failed') return fail(res, 400, 'รูปแบบข้อมูลไม่ถูกต้อง');
     if (err.type === 'entity.too.large') return fail(res, 413, 'ข้อมูลมีขนาดใหญ่เกินไป');
-    console.error(err);
+    // log แค่ชนิด/ข้อความ/stack — ไม่พิมพ์ทั้ง object (error ของ PostgreSQL มี detail ที่อาจมีอีเมล/ข้อมูลลูกค้า)
+    // และใช้ req.path ไม่ใช่ originalUrl (query มี ?t=token ของออเดอร์)
+    console.error(`❌ ${req.method} ${req.path}: ${err && err.stack ? err.stack : String(err)}`);
     if (res.headersSent) return res.end();
     fail(res, 500, 'เกิดข้อผิดพลาดในระบบ ลองใหม่อีกครั้ง');
   });

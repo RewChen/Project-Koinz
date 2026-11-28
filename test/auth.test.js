@@ -983,3 +983,119 @@ describe('Auth Phase 3 — ?next= กัน open redirect (safeNext ใน commo
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+describe('Auth Phase 4 — CSP / HSTS / no-store / log / XSS', () => {
+  const PUBLIC = path.join(ROOT, 'public');
+  const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    + "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
+    + "base-uri 'none'; form-action 'self'";
+  let s;
+  before(async () => (s = await startServer({ MAIL_PROVIDER: 'log', PUBLIC_URL: 'https://koinz.test' })));
+  after(() => s.stop());
+
+  test('ทุกหน้า HTML และ API ส่ง Content-Security-Policy ตามสเปก / ไม่ใช่ production ไม่มี HSTS', async () => {
+    const pages = fs.readdirSync(PUBLIC).filter((f) => f.endsWith('.html'));
+    assert.ok(pages.length >= 11, pages.join());
+    for (const url of [...pages.map((p) => '/' + p), '/', '/api/config', '/api/auth/session']) {
+      const r = await s.req('GET', url);
+      assert.equal(r.headers.get('content-security-policy'), CSP, url);
+      assert.equal(r.headers.get('x-frame-options'), 'DENY', url);
+      assert.equal(r.headers.get('strict-transport-security'), null, url);
+    }
+  });
+
+  test('ไม่มี inline script / event handler / javascript: ใน public/ (CSP จะบล็อก)', () => {
+    const files = [
+      ...fs.readdirSync(PUBLIC).filter((f) => f.endsWith('.html')),
+      ...fs.readdirSync(path.join(PUBLIC, 'js')).map((f) => 'js/' + f),
+    ];
+    for (const f of files) {
+      const text = fs.readFileSync(path.join(PUBLIC, f), 'utf8');
+      if (f.endsWith('.html')) {
+        const inline = [...text.matchAll(/<script\b([^>]*)>/g)].filter((m) => !/\bsrc=/.test(m[1]));
+        assert.equal(inline.length, 0, `${f} มี <script> แบบ inline`);
+      }
+      assert.doesNotMatch(text, /\son[a-z]+\s*=\s*["'`]/i, `${f} มี on…= handler`);
+      assert.doesNotMatch(text, /javascript:/i, `${f} มี javascript: URL`);
+      assert.doesNotMatch(text, /\beval\(|new Function\(/, `${f} ใช้ eval`);
+    }
+  });
+
+  test('production → Strict-Transport-Security 180 วัน', async () => {
+    const p = await startServer({
+      NODE_ENV: 'production', ADMIN_PASSWORD: 'a-strong-admin-pass-99', SESSION_SECRET: crypto.randomBytes(32).toString('base64url'),
+    });
+    try {
+      const r = await p.req('GET', '/');
+      assert.equal(r.headers.get('strict-transport-security'), 'max-age=15552000');
+      assert.equal(r.headers.get('content-security-policy'), CSP);
+    } finally {
+      await p.stop();
+    }
+  });
+
+  test('Cache-Control: no-store ทุก response ของ /api/auth/* และ /api/me/* รวม error', async () => {
+    const a = await member(s);
+    const anon = browser(s);
+    const calls = [
+      () => anon.get('/api/auth/session'),
+      () => anon.get('/api/me'),
+      () => anon.get('/api/me/orders'),
+      () => anon.get('/api/me/nope'),
+      () => anon.post('/api/auth/login', { email: 'x@example.com', password: 'wrong-password' }),
+      () => anon.post('/api/auth/login', {}, { origin: 'https://evil.example' }),
+      () => anon.post('/api/auth/forgot', { email: 'x@example.com' }),
+      () => anon.post('/api/auth/reset/verify', { token: 'x' }),
+      () => anon.get('/api/auth/reset/' + 'x'.repeat(43)),
+      () => a.get('/api/me'),
+      () => a.get('/api/me/orders'),
+      () => a.get('/api/me/players'),
+      () => a.post('/api/me/password', { currentPassword: 'wrong', newPassword: 'x' }),
+    ];
+    for (const c of calls) {
+      const r = await c();
+      assert.equal(r.headers.get('cache-control'), 'no-store', `${r.status} ${r.text.slice(0, 60)}`);
+    }
+  });
+
+  test('log ไม่มีรหัสผ่าน / cookie / token / อีเมลเต็ม แม้ส่ง JSON เสีย ๆ ที่มีรหัสผ่าน', async () => {
+    const email = newEmail();
+    const a = await member(s, email);
+    await a.post('/api/auth/logout');
+    await a.login(email, 'Wrong-password-123');
+    await a.login(email);
+    await a.post('/api/me/password', { currentPassword: GOOD_PW, newPassword: 'Another-secret-pass-55' });
+    await browser(s).post('/api/auth/forgot', { email });
+    const o = (await a.post('/api/orders', mlOrder())).body;
+    await a.get(`/api/orders/${o.id}?t=${o.token}`);
+    // body เสีย (parse ไม่ได้) ที่มีรหัสผ่าน → 400 และไม่ถูกพิมพ์ลง log
+    const bad = await fetch(s.base + '/api/auth/login', {
+      method: 'POST', headers: { 'content-type': 'application/json', origin: s.base },
+      body: `{"email":"${email}","password":"Leaky-password-999"`,
+    });
+    assert.equal(bad.status, 400);
+    await pause(300);
+    const log = s.log();
+    for (const secret of [GOOD_PW, 'Wrong-password-123', 'Another-secret-pass-55', 'Leaky-password-999', a.jar.koinz_sid, o.token, email]) {
+      assert.ok(secret && !log.includes(secret), `log มีค่าลับ: ${secret.slice(0, 6)}…`);
+    }
+    assert.match(log, /m\*\*\*@example\.com/); // อีเมลใน log ถูกปิดบางส่วน
+  });
+
+  test('XSS: อีเมล / UID ที่มีอักขระ HTML ถูกปฏิเสธที่เซิร์ฟเวอร์ (หน้าเว็บ esc() อีกชั้น)', async () => {
+    for (const email of ['<svg/onload=alert(1)>@x.co', '"a"@example.com', "o'neil@example.com", 'a`b@example.com']) {
+      const r = await browser(s).signup(email);
+      assert.equal(r.status, 400, email);
+    }
+    const r = await browser(s).post('/api/orders', mlOrder({ playerInputs: { uid: '<img src=x>', zone: '1234' } }));
+    assert.equal(r.status, 400);
+  });
+
+  test('หน้าเงื่อนไข / นโยบายความเป็นส่วนตัว เปิดได้ และหน้าสมัครลิงก์ไปทั้งคู่', async () => {
+    for (const p of ['/terms.html', '/privacy.html']) assert.equal((await s.req('GET', p)).status, 200, p);
+    const js = fs.readFileSync(path.join(PUBLIC, 'js', 'auth.js'), 'utf8');
+    assert.match(js, /href="terms\.html"/);
+    assert.match(js, /href="privacy\.html"/);
+  });
+});

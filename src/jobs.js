@@ -92,7 +92,7 @@ async function tick() {
     // งานคนละออเดอร์รันพร้อมกันได้ (จองแล้ว ไม่ถูกหยิบซ้ำ)
     for (const job of jobs) {
       runFulfill(job)
-        .catch((e) => console.error(`งานเติมเกม ${job.id} ผิดพลาด:`, e))
+        .catch((e) => console.error(`งานเติมเกม ${job.id} ผิดพลาด:`, e && e.stack ? e.stack : String(e)))
         .finally(() => setImmediate(tick));
     }
   } catch (e) {

@@ -719,6 +719,20 @@ svg { flex: none; }
   .sheet { width: calc(100% - 48px); max-width: 440px; margin: auto; padding: 28px; border-radius: 28px; }
 }
 
+/* ---------- หน้าเอกสาร (terms.html / privacy.html) ---------- */
+.doc { max-width: 720px; padding: 12px 0 48px; }
+.doc h1 { font-size: 28px; }
+.doc .updated { margin-top: 4px; font-size: 13px; color: var(--muted); }
+.doc h2 { margin-top: 28px; font-size: 18px; }
+.doc p, .doc li { margin-top: 8px; font-size: 15px; line-height: 1.7; color: var(--ink-2); }
+.doc ul { padding-left: 20px; }
+.doc b { color: var(--ink); font-weight: 600; }
+.doc code { font-size: 14px; padding: 1px 6px; border-radius: 6px; background: var(--line-soft); color: var(--ink); }
+@media (min-width: 900px) {
+  .doc { padding: 28px 0 64px; }
+  .doc h1 { font-size: 36px; }
+}
+
 @media (max-width: 1080px) {
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -7,7 +7,7 @@
 - Webhook ยืนยันการชำระเงินแบบ HMAC (รับยอดที่โอนมาหลังหมดเวลาด้วย)
 - คิวเติมเกมอัตโนมัติพร้อม retry ทำต่อได้หลังรีสตาร์ท
 - หลังบ้าน: สรุปยอด ค้นหา ปุ่มลัด และ audit log ทุกการเปลี่ยนสถานะ
-- Rate limit, security headers, ลิงก์ออเดอร์ต้องมี token
+- Rate limit, security headers + Content-Security-Policy (ไม่มี inline script), ลิงก์ออเดอร์ต้องมี token · รายงานตรวจระบบสมาชิก: [`docs/security-review.md`](docs/security-review.md)
 
 ## เริ่มใช้งาน (Windows)
 
@@ -81,7 +81,7 @@ koinz/
 │   ├── orders.js          # สถานะออเดอร์, transition(), audit log, event bus
 │   ├── jobs.js            # คิวเติมเกม + retry, กวาดออเดอร์หมดอายุ
 │   ├── adapters.js        # ตรวจชื่อในเกม, supplier, แจ้งเตือนแอดมิน
-│   ├── security.js        # rate limit, security headers, CORS, กัน CSRF (sameOriginOnly)
+│   ├── security.js        # rate limit, security headers + CSP (+ HSTS บน production), CORS, กัน CSRF (sameOriginOnly)
 │   ├── auth/              # ระบบสมาชิก: password.js (scrypt + นโยบาย), session.js (cookie koinz_sid), members.js, routes.js
 │   ├── app.js             # createApp(): ทุก route
 │   └── promptpay.js       # สร้าง payload QR PromptPay (ห้ามแก้)
@@ -101,13 +101,16 @@ koinz/
 │   ├── forgot.html        # ลืมรหัสผ่าน → "ตรวจอีเมลของคุณ" + ส่งซ้ำได้ทุก 60 วิ
 │   ├── reset.html         # ตั้งรหัสใหม่จากลิงก์อีเมล (#token=…) / ?mode=change = เปลี่ยนรหัสผ่าน
 │   ├── account.html       # บัญชีของฉัน: ผูกออเดอร์ในเครื่อง, UID ที่บันทึก, ออเดอร์, ความปลอดภัย, ลบบัญชี
+│   ├── terms.html / privacy.html   # เงื่อนไขการใช้งาน / นโยบายความเป็นส่วนตัว (ร่าง — แก้แล้วเปลี่ยน TERMS_VERSION)
 │   ├── admin.html         # หลังบ้าน (ไม่ขึ้น Pages)
 │   ├── css/style.css      # design tokens (:root) + ทุก component · breakpoint เดียว 900px
 │   └── js/
 │       ├── config.js      # URL ของ API (ค่าว่าง = โดเมนเดียวกัน)
 │       ├── common.js      # api(), esc(), ไอคอน SVG, remember (จำ UID ต่อเกม), myOrders, memberStatus(), safeNext()
+│       ├── shop.js / order.js / admin.js   # สคริปต์ของ index.html / order.html / admin.html (CSP ห้าม inline script)
 │       ├── auth.js        # หน้า login / signup / forgot / reset
 │       ├── account.js     # หน้า account
+│       ├── doc.js / game-redirect.js   # ลิงก์ LINE ในหน้าเอกสาร / redirect ของ game.html
 │       └── pile.js        # renderPile(): กองเหรียญ voxel แบบ SVG + animation ตอนเปลี่ยนแพ็กเกจ
 ├── db/
 │   ├── migrations/001_init.sql   # ตาราง games, packages, orders, order_history, audit, jobs
