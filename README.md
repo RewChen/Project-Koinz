@@ -170,7 +170,7 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | `POSTGRES_PASSWORD` | – | รหัสผ่าน PostgreSQL สำหรับ Docker Compose (จำเป็นเมื่อใช้ Docker) |
 | `TEST_DATABASE_URL` | – | ใช้กับ `npm run test:pg` เท่านั้น: เทสจะสร้าง/ลบฐานข้อมูลชั่วคราวผ่าน connection นี้ |
 | `ORDER_TTL_MINUTES` | `15` | เวลาให้ลูกค้าโอน (นาที, ใส่ทศนิยมได้) |
-| `SHOP_LINE_URL` | – | ลิงก์ LINE ร้าน (ต้องเป็น `https://`) แสดงในหน้าออเดอร์ / ติดต่อ / คืนเงิน |
+| `SHOP_LINE_URL` | – | ลิงก์ LINE ร้าน (ต้องเป็น `https://`) ใช้กับปุ่มแชทลอยและลิงก์ติดต่อในหน้าออเดอร์ / เกี่ยวกับร้าน / คืนเงิน |
 | `SHOP_LINE_ID` | – | LINE ID ที่แสดงเป็นข้อความในหน้าเกี่ยวกับร้าน เช่น `@koinz` (ว่าง = ซ่อนแถว) |
 | `SHOP_FACEBOOK_URL` | – | ลิงก์เพจ Facebook (ต้องเป็น `https://` ไม่งั้นไม่แสดง) |
 | `SHOP_FACEBOOK_NAME` | – | ชื่อเพจที่แสดง (ว่าง = "เพจ Facebook") |
