@@ -156,7 +156,7 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | `POSTGRES_PASSWORD` | – | รหัสผ่าน PostgreSQL สำหรับ Docker Compose (จำเป็นเมื่อใช้ Docker) |
 | `TEST_DATABASE_URL` | – | ใช้กับ `npm run test:pg` เท่านั้น: เทสจะสร้าง/ลบฐานข้อมูลชั่วคราวผ่าน connection นี้ |
 | `ORDER_TTL_MINUTES` | `15` | เวลาให้ลูกค้าโอน (นาที, ใส่ทศนิยมได้) |
-| `SHOP_LINE_URL` | – | ลิงก์ LINE ร้าน แสดงในหน้าออเดอร์ |
+| `SHOP_LINE_URL` | – | ลิงก์ LINE ร้าน ใช้กับปุ่มแชทลอยในหน้าร้าน/หน้าออเดอร์ และลิงก์ติดต่อร้าน |
 | `PAYMENT_WEBHOOK_SECRET` | – | รหัสลับตรวจลายเซ็น webhook ชำระเงิน — เว้นว่าง = ปิด webhook (404) |
 | `SUPPLIER_API_URL` | – | URL ของ supplier เติมเกม (ต้องตั้งคู่กับ KEY ถึงจะเปิดเติมอัตโนมัติ) |
 | `SUPPLIER_API_KEY` | – | API key ของ supplier (ส่งเป็น `Authorization: Bearer`) |
