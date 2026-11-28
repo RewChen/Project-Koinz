@@ -129,17 +129,24 @@ function createApp() {
     res.status(created ? 201 : 200).json({ id: order.id, token: order.token });
   }));
 
+  // เปิดออเดอร์ได้ 2 ทาง: token ในลิงก์ (guest) หรือ session ของสมาชิกที่เป็นเจ้าของออเดอร์ (หน้าบัญชี)
   async function findOrderForCustomer(req, res) {
     const token = req.query.t || (req.body && req.body.t);
     const order = await orders.find(req.params.id);
-    if (!order || !token || !safeEqual(order.token, token)) {
+    const byToken = !!(order && token && safeEqual(order.token, token));
+    const byOwner = !!(order && !token && req.member && order.userId && order.userId === req.member.user.id);
+    if (!byToken && !byOwner) {
       fail(res, 404, 'ไม่พบออเดอร์ หรือลิงก์ไม่ถูกต้อง');
       return null;
     }
+    if (byOwner) res.set('Cache-Control', 'no-store');
     return order;
   }
 
-  app.get('/api/orders/:id', wrap(async (req, res) => {
+  // แจ้งโอนด้วย session (ไม่มี token) ต้องมาจากหน้าเว็บของร้านเท่านั้น (กัน CSRF) — แบบมี token ใช้ได้เหมือนเดิม
+  const ownerCsrf = (req, res, next) => ((req.body && req.body.t) ? next() : security.sameOriginOnly(req, res, next));
+
+  app.get('/api/orders/:id', session.middleware, wrap(async (req, res) => {
     const order = await findOrderForCustomer(req, res);
     if (!order) return;
     const data = orders.publicView(order);
@@ -156,7 +163,7 @@ function createApp() {
   }));
 
   // SSE: push สถานะทันทีที่เปลี่ยน (ไม่ poll ฐานข้อมูล)
-  app.get('/api/orders/:id/events', wrap(async (req, res) => {
+  app.get('/api/orders/:id/events', session.middleware, wrap(async (req, res) => {
     const order = await findOrderForCustomer(req, res);
     if (!order) return;
     res.writeHead(200, {
@@ -179,7 +186,7 @@ function createApp() {
     });
   }));
 
-  app.post('/api/orders/:id/notify', security.limits.notify, wrap(async (req, res) => {
+  app.post('/api/orders/:id/notify', security.limits.notify, ownerCsrf, session.middleware, wrap(async (req, res) => {
     const order = await findOrderForCustomer(req, res);
     if (!order) return;
     try {

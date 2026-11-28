@@ -17,6 +17,7 @@
         <a class="desk first" href="#games">เกมทั้งหมด</a>
         <a href="#mine">ออเดอร์ของฉัน</a>
         <a class="desk" id="contact" href="#" hidden>ติดต่อร้าน</a>
+        <a id="member-link" href="login.html">เข้าสู่ระบบ</a>
       </nav>
     </header>
 
@@ -73,6 +74,7 @@
     let idemKey = null;          // ใช้ซ้ำเมื่อกดจ่ายใหม่หลังเน็ตหลุด ล้างเมื่อแก้ข้อมูล
     let nickname = null;         // ผลตรวจชื่อในเกม { nickname, mock }
     let rememberedUsed = false;  // กรอก UID ล่าสุดให้อัตโนมัติ
+    let savedPlayers = new Map(); // ล็อกอินอยู่: UID ที่บันทึกในบัญชี (ใช้ก่อน localStorage)
 
     const fieldId = (f) => 'f-' + f.name;
 
@@ -157,7 +159,8 @@
     }
 
     function renderFields() {
-      const saved = remember.get(game.slug, game.fields);
+      const fromAccount = savedPlayers.get(game.slug);
+      const saved = fromAccount ? { ...fromAccount.inputs } : remember.get(game.slug, game.fields);
       rememberedUsed = Object.keys(saved).length > 0;
       const multi = game.fields.length > 1;
       const box = $('#fields');
@@ -303,7 +306,17 @@
     // ---------- เริ่ม ----------
     $('#arrow-d').outerHTML = ICON.arrow(18);
     renderMine();
-    Promise.all([api('/api/games'), shopConfig])
+    // ลิงก์สมาชิกใน header + UID ที่บันทึกในบัญชี
+    const memberReady = memberStatus().then(async (member) => {
+      const link = $('#member-link');
+      if (!member) { link.href = loginHref(); return; }
+      link.textContent = 'บัญชีของฉัน';
+      link.href = 'account.html';
+      const list = await api('/api/me/players').catch(() => []);
+      savedPlayers = new Map(list.map((p) => [p.gameSlug, p]));
+    });
+
+    Promise.all([api('/api/games'), shopConfig, memberReady])
       .then(([list, c]) => {
         cfg = c || {};
         games = list;

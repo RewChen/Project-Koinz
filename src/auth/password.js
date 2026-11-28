@@ -114,5 +114,5 @@ module.exports = {
   verifyDummy,
   normalizeForCompare: normalize,
   isCommon: (pw) => COMMON.has(normalize(pw).toLowerCase()),
-  commonList: { file: COMMON_FILE, size: COMMON.size },
+  commonList: { file: COMMON_FILE, size: COMMON.size, words: () => [...COMMON] },
 };

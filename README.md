@@ -97,11 +97,17 @@ koinz/
 │   ├── index.html         # หน้าแรก + เติมเกม (?game=<slug>): ชิปเกม, กองเหรียญ, แพ็กเกจ, ช่องผู้เล่นจาก fields, ออเดอร์ของฉัน
 │   ├── game.html          # redirect เก่า: game.html?slug=x → ./?game=x
 │   ├── order.html         # สแกนจ่าย / QR หมดอายุ / สถานะ (SSE) / เติมไม่สำเร็จ-คืนเงิน
+│   ├── login.html / signup.html   # เข้าสู่ระบบ / สมัครสมาชิก (คอม: แท็บสลับกันได้) · ?next=/path กลับหน้าเดิม
+│   ├── forgot.html        # ลืมรหัสผ่าน → "ตรวจอีเมลของคุณ" + ส่งซ้ำได้ทุก 60 วิ
+│   ├── reset.html         # ตั้งรหัสใหม่จากลิงก์อีเมล (#token=…) / ?mode=change = เปลี่ยนรหัสผ่าน
+│   ├── account.html       # บัญชีของฉัน: ผูกออเดอร์ในเครื่อง, UID ที่บันทึก, ออเดอร์, ความปลอดภัย, ลบบัญชี
 │   ├── admin.html         # หลังบ้าน (ไม่ขึ้น Pages)
 │   ├── css/style.css      # design tokens (:root) + ทุก component · breakpoint เดียว 900px
 │   └── js/
 │       ├── config.js      # URL ของ API (ค่าว่าง = โดเมนเดียวกัน)
-│       ├── common.js      # api(), esc(), ไอคอน SVG, remember (จำ UID ต่อเกม), myOrders
+│       ├── common.js      # api(), esc(), ไอคอน SVG, remember (จำ UID ต่อเกม), myOrders, memberStatus(), safeNext()
+│       ├── auth.js        # หน้า login / signup / forgot / reset
+│       ├── account.js     # หน้า account
 │       └── pile.js        # renderPile(): กองเหรียญ voxel แบบ SVG + animation ตอนเปลี่ยนแพ็กเกจ
 ├── db/
 │   ├── migrations/001_init.sql   # ตาราง games, packages, orders, order_history, audit, jobs
@@ -196,9 +202,9 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | GET | `/api/games/:slug` | เกม + `fields` + `packages` (ไม่มี `sku`/`cost`) |
 | POST | `/api/player/lookup` | `{gameSlug, playerInputs}` → `{nickname, mock}` · 404 ถ้ายังไม่เปิดระบบหรือไม่พบผู้เล่น · 30 ครั้ง/นาที |
 | POST | `/api/orders` | `{gameSlug, packageId, playerInputs, contact?, idempotencyKey?}` → `201 {id, token}` (key ซ้ำ → `200` ออเดอร์เดิม) · 20 ครั้ง/นาที · ล็อกอินอยู่ = ผูกกับบัญชี + จำ UID |
-| GET | `/api/orders/:id?t=token` | ออเดอร์ + `serverTime` + `qr` (เฉพาะตอนรอโอนและยังไม่หมดเวลา) |
-| GET | `/api/orders/:id/events?t=token` | SSE: `event: status` ทุกครั้งที่สถานะเปลี่ยน, `: ping` ทุก 25 วินาที |
-| POST | `/api/orders/:id/notify` | `{t, note?, lineId?}` ลูกค้าแจ้งโอน (จาก `pending_payment` หรือ `expired`) · 10 ครั้ง/นาที |
+| GET | `/api/orders/:id?t=token` | ออเดอร์ + `serverTime` + `qr` (เฉพาะตอนรอโอนและยังไม่หมดเวลา) · ไม่มี `t` = ใช้ session ของสมาชิกที่เป็นเจ้าของออเดอร์แทน (หน้าบัญชี) |
+| GET | `/api/orders/:id/events?t=token` | SSE: `event: status` ทุกครั้งที่สถานะเปลี่ยน, `: ping` ทุก 25 วินาที · ไม่มี `t` = session เจ้าของ |
+| POST | `/api/orders/:id/notify` | `{t, note?, lineId?}` ลูกค้าแจ้งโอน (จาก `pending_payment` หรือ `expired`) · 10 ครั้ง/นาที · ไม่มี `t` = session เจ้าของ และต้องมี `Origin` ของเว็บเอง |
 
 ### สมาชิก (cookie `koinz_sid`)
 
@@ -208,11 +214,14 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 |---|---|---|
 | POST | `/api/auth/signup` | `{email, password, acceptTerms: true, marketing?}` → `201 {email, createdAt}` + ล็อกอินให้เลย · อีเมลซ้ำ → `409` ข้อความกลาง ๆ · 5 ครั้ง/ชั่วโมง |
 | POST | `/api/auth/login` | `{email, password}` → `{email, createdAt}` · ผิด → `401` ข้อความเดียวเสมอ · ผิด 5 ครั้งใน 15 นาที → `423 {error, lockedUntil, retryAfter}` 15 นาที · 10 ครั้ง/นาที |
+| GET | `/api/auth/session` | `{member: {email}}` หรือ `{member: null}` (ตอบ 200 เสมอ — หน้าเว็บใช้เช็คว่าล็อกอินอยู่ไหม) |
 | POST | `/api/auth/logout` | ลบ session ปัจจุบัน + ล้าง cookie |
 | GET | `/api/me` | `{email, createdAt, sessionCount}` หรือ `401` |
 | POST | `/api/auth/logout-all` | ออกจากระบบทุกอุปกรณ์ (รวมเครื่องนี้) |
 | POST | `/api/auth/forgot` | `{email}` → `200` ข้อความเดียวกันเสมอไม่ว่ามีบัญชีหรือไม่ · ต่ออีเมล 3 ครั้ง/ชม. เว้น 60 วิ (เกิน = ไม่ส่งเงียบ ๆ) · ต่อ IP 10 ครั้ง/ชม. · ปิดอีเมลอยู่ → `503` |
 | GET | `/api/auth/reset/:token` | `{valid: true, email}` หรือ `404 {valid: false}` (ไม่บอกอีเมล) |
+| POST | `/api/auth/reset/verify` | `{token}` → ผลเหมือนบรรทัดบน แต่ token อยู่ใน body ไม่ติด access log (หน้า reset.html ใช้ตัวนี้) |
+| GET | `/api/password-policy` | `{minLength, maxLength, common: [...]}` ให้หน้าสมัคร/ตั้งรหัสตรวจขณะพิมพ์ (ข้อมูลสาธารณะ cache 1 วัน ไม่มี no-store) |
 | POST | `/api/auth/reset` | `{token, password, logoutOthers}` → ใช้ได้ครั้งเดียว, ลบลิงก์อื่นของบัญชี, ปลดล็อก, ล็อกอินให้ · `logoutOthers` ไม่ใช่ `false` = ออกจากระบบเครื่องอื่นทั้งหมด |
 | POST | `/api/me/password` | `{currentPassword, newPassword}` → ออกจากระบบเครื่องอื่นทั้งหมด + อีเมลแจ้ง |
 | GET | `/api/me/orders` | ออเดอร์ของฉัน 50 รายการล่าสุด (ไม่มี `token`, `contact`, `lineId`) |

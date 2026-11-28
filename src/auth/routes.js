@@ -3,6 +3,7 @@ const security = require('../security');
 const catalog = require('../catalog');
 const session = require('./session');
 const members = require('./members');
+const password = require('./password');
 
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const HOUR = 60 * 60 * 1000;
@@ -34,6 +35,17 @@ function requireMember(req, res, next) {
 }
 
 function mount(app) {
+  // นโยบายรหัสผ่านให้หน้าสมัคร/ตั้งรหัสใหม่ตรวจขณะพิมพ์ (รายการรหัสยอดนิยมเป็นข้อมูลสาธารณะ cache ได้)
+  let policy = null;
+  app.get('/api/password-policy', (req, res) => {
+    policy = policy || JSON.stringify({
+      minLength: password.MIN_LENGTH,
+      maxLength: password.MAX_LENGTH,
+      common: password.commonList.words(),
+    });
+    res.set('Cache-Control', 'public, max-age=86400').type('json').send(policy);
+  });
+
   app.use(['/api/auth', '/api/me'], security.noStore, security.sameOriginOnly, session.middleware);
 
   // ---------- สมัคร / เข้า / ออก ----------
@@ -53,6 +65,11 @@ function mount(app) {
     await session.start(req, res, r.value.id);
     res.json(members.publicUser(r.value));
   }));
+
+  // หน้าเว็บใช้เช็คว่าล็อกอินอยู่ไหม (ตอบ 200 เสมอ ไม่ให้ console มี 401 ทุกหน้า)
+  app.get('/api/auth/session', (req, res) => {
+    res.json({ member: req.member ? { email: req.member.user.email } : null });
+  });
 
   app.post('/api/auth/logout', wrap(async (req, res) => {
     await session.end(req, res);
@@ -74,6 +91,13 @@ function mount(app) {
 
   app.get('/api/auth/reset/:token', limits.reset, wrap(async (req, res) => {
     const user = await members.findResetUser(req.params.token);
+    if (!user) return res.status(404).json({ valid: false, error: members.MSG.resetInvalid });
+    res.json({ valid: true, email: user.email });
+  }));
+
+  // หน้า reset.html ใช้ POST แทน GET /reset/:token เพื่อไม่ให้ token ไปอยู่ใน URL ของ access log
+  app.post('/api/auth/reset/verify', limits.reset, wrap(async (req, res) => {
+    const user = await members.findResetUser((req.body || {}).token);
     if (!user) return res.status(404).json({ valid: false, error: members.MSG.resetInvalid });
     res.json({ valid: true, email: user.email });
   }));

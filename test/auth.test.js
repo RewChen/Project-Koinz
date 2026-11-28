@@ -835,3 +835,151 @@ describe('Auth Phase 2 — ปิดอีเมล / จำกัดต่อ�
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+describe('Auth Phase 3 — API ที่หน้าเว็บสมาชิกใช้', () => {
+  let s;
+  before(async () => (s = await startServer(MAIL_ENV)));
+  after(() => s.stop());
+
+  test('GET /api/auth/session: ไม่ล็อกอิน → member null (200) / ล็อกอิน → อีเมล + no-store', async () => {
+    const anon = await browser(s).get('/api/auth/session');
+    assert.equal(anon.status, 200);
+    assert.deepEqual(anon.body, { member: null });
+    const a = await member(s);
+    const me = await a.get('/api/auth/session');
+    assert.deepEqual(me.body, { member: { email: a.email } });
+    assert.equal(me.headers.get('cache-control'), 'no-store');
+  });
+
+  test('เจ้าของออเดอร์เปิดหน้าออเดอร์ได้ด้วย session (ไม่มี token) / คนอื่นและ guest ไม่ได้', async () => {
+    const a = await member(s);
+    const o = (await a.post('/api/orders', mlOrder())).body;
+    const mine = await a.get(`/api/orders/${o.id}`);
+    assert.equal(mine.status, 200, mine.text);
+    assert.equal(mine.body.id, o.id);
+    assert.ok(mine.body.qr, 'ยังรอจ่าย ต้องมี QR');
+    assert.ok(!('token' in mine.body) && !('userId' in mine.body));
+    assert.equal(mine.headers.get('cache-control'), 'no-store');
+
+    const other = await member(s);
+    assert.equal((await other.get(`/api/orders/${o.id}`)).status, 404);
+    assert.equal((await browser(s).get(`/api/orders/${o.id}`)).status, 404);
+    // token ผิด + session เจ้าของ → ยังไม่ได้ (token ที่ส่งมาต้องถูก)
+    assert.equal((await a.get(`/api/orders/${o.id}?t=wrong`)).status, 404);
+    // ออเดอร์ guest เปิดด้วย session ใครก็ไม่ได้
+    const g = (await browser(s).post('/api/orders', mlOrder())).body;
+    assert.equal((await a.get(`/api/orders/${g.id}`)).status, 404);
+    assert.equal((await a.get(`/api/orders/${g.id}?t=${g.token}`)).status, 200);
+  });
+
+  test('SSE ของเจ้าของออเดอร์ใช้ session ได้ / คนอื่น 404', async () => {
+    const a = await member(s);
+    const o = (await a.post('/api/orders', mlOrder())).body;
+    const ctrl = new AbortController();
+    const res = await fetch(`${s.base}/api/orders/${o.id}/events`, {
+      headers: { cookie: `koinz_sid=${a.jar.koinz_sid}` }, signal: ctrl.signal,
+    });
+    assert.equal(res.status, 200);
+    const reader = res.body.getReader();
+    let text = '';
+    while (!/event: status/.test(text)) text += new TextDecoder().decode((await reader.read()).value);
+    assert.match(text, /"status":"pending_payment"/);
+    ctrl.abort();
+    const other = await member(s);
+    const r = await fetch(`${s.base}/api/orders/${o.id}/events`, { headers: { cookie: `koinz_sid=${other.jar.koinz_sid}` } });
+    assert.equal(r.status, 404);
+    await r.text();
+  });
+
+  test('แจ้งโอนด้วย session: ต้องมาจากหน้าเว็บร้าน (Origin) / แบบ token ใช้ได้เหมือนเดิม', async () => {
+    const a = await member(s);
+    const o = (await a.post('/api/orders', mlOrder())).body;
+    const sid = `koinz_sid=${a.jar.koinz_sid}`;
+    const cross = await fetch(`${s.base}/api/orders/${o.id}/notify`, {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: sid, origin: 'https://evil.example' }, body: '{}',
+    });
+    assert.equal(cross.status, 403);
+    const noOrigin = await fetch(`${s.base}/api/orders/${o.id}/notify`, {
+      method: 'POST', headers: { 'content-type': 'application/json', cookie: sid }, body: '{}',
+    });
+    assert.equal(noOrigin.status, 403);
+    const ok = await a.post(`/api/orders/${o.id}/notify`, { t: null });
+    assert.equal(ok.status, 200, ok.text);
+    assert.equal((await a.get(`/api/orders/${o.id}`)).body.status, 'paid_pending_review');
+
+    // guest แจ้งโอนด้วย token โดยไม่มี Origin ได้เหมือนเดิม
+    const g = (await s.req('POST', '/api/orders', mlOrder())).body;
+    assert.equal((await s.req('POST', `/api/orders/${g.id}/notify`, { t: g.token })).status, 200);
+  });
+
+  test('POST /api/auth/reset/verify (token อยู่ใน body ไม่อยู่ใน URL): ใช้ได้ → อีเมล / ผิด → 404', async () => {
+    const a = await member(s);
+    const n = resetTokens(s).length;
+    await browser(s).post('/api/auth/forgot', { email: a.email });
+    const token = await nextResetToken(s, n);
+    const ok = await browser(s).post('/api/auth/reset/verify', { token });
+    assert.equal(ok.status, 200);
+    assert.deepEqual(ok.body, { valid: true, email: a.email });
+    assert.equal(ok.headers.get('cache-control'), 'no-store');
+    for (const bad of ['x'.repeat(43), '', 123, null]) {
+      const r = await browser(s).post('/api/auth/reset/verify', { token: bad });
+      assert.equal(r.status, 404);
+      assert.equal(r.body.valid, false);
+    }
+    // ตรวจแล้วลิงก์ยังใช้ตั้งรหัสได้ (ตรวจไม่ใช่การใช้ลิงก์)
+    assert.equal((await browser(s).post('/api/auth/reset', { token, password: 'brand-new-secret-41' })).status, 200);
+    assert.equal((await browser(s).post('/api/auth/reset/verify', { token })).status, 404);
+  });
+
+  test('GET /api/password-policy → นโยบายเดียวกับเซิร์ฟเวอร์ + รายการรหัสยอดนิยม (cache ได้)', async () => {
+    const r = await s.req('GET', '/api/password-policy');
+    assert.equal(r.status, 200);
+    assert.equal(r.body.minLength, password.MIN_LENGTH);
+    assert.equal(r.body.maxLength, password.MAX_LENGTH);
+    assert.equal(r.body.common.length, password.commonList.size);
+    assert.ok(r.body.common.includes('password1234') || r.body.common.includes('password'));
+    assert.match(r.headers.get('cache-control'), /max-age=86400/);
+  });
+
+  test('หน้าสมาชิกทุกหน้าเปิดได้และโหลดสคริปต์จากไฟล์ (ไม่ใช้ inline script)', async () => {
+    for (const page of ['login', 'signup', 'forgot', 'reset', 'account']) {
+      const r = await s.req('GET', `/${page}.html`);
+      assert.equal(r.status, 200, page);
+      assert.match(r.text, /<html lang="th">/);
+      assert.match(r.text, new RegExp(`data-page="${page}"`));
+      assert.ok(!/<script>/.test(r.text), `${page}.html มี inline script`);
+      assert.match(r.text, /js\/common\.js/);
+    }
+  });
+});
+
+describe('Auth Phase 3 — ?next= กัน open redirect (safeNext ใน common.js)', () => {
+  const vm = require('node:vm');
+  const ctx = vm.createContext({
+    window: {}, URL, URLSearchParams, console,
+    location: { origin: 'https://shop.example', href: 'https://shop.example/login.html', pathname: '/login.html', search: '' },
+    fetch: () => Promise.reject(new Error('offline')),
+    localStorage: { getItem: () => null, setItem() {} },
+    document: { querySelectorAll: () => [], querySelector: () => null },
+  });
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'public', 'js', 'common.js'), 'utf8'), ctx);
+  const safeNext = (v) => vm.runInContext(`safeNext(${JSON.stringify(v)})`, ctx);
+
+  test('path ภายในเว็บ → ใช้ได้', () => {
+    assert.equal(safeNext('/'), '/');
+    assert.equal(safeNext('/?game=mobile-legends'), '/?game=mobile-legends');
+    assert.equal(safeNext('/order.html?id=K1&t=abc#x'), '/order.html?id=K1&t=abc#x');
+    assert.equal(safeNext('/account.html'), '/account.html');
+  });
+
+  test('URL เว็บอื่น / // / \\ / javascript: / ตัวควบคุม → ค่าว่าง (หน้าเว็บไปหน้าบัญชีแทน)', () => {
+    for (const bad of [
+      'https://evil.example', 'http://evil.example/account.html', '//evil.example', '///evil.example',
+      '/\\evil.example', '\\\\evil.example', 'javascript:alert(1)', 'account.html', '/\tevil', '/\n/evil.example',
+      ' /account.html', '', null, undefined,
+    ]) {
+      assert.equal(safeNext(bad), '', `ต้องไม่ยอม: ${JSON.stringify(bad)}`);
+    }
+  });
+});

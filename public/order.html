@@ -20,7 +20,8 @@
     const params = new URLSearchParams(location.search);
     const id = params.get('id');
     const t = params.get('t');
-    const query = `?t=${encodeURIComponent(t || '')}`;
+    // ไม่มี token = เปิดจากหน้าบัญชี (เซิร์ฟเวอร์ตรวจว่า session เป็นเจ้าของออเดอร์)
+    const query = t ? `?t=${encodeURIComponent(t)}` : '';
     const FINAL = ['completed', 'cancelled', 'refunded'];
     const HEADLINE = {
       paid_pending_review: 'ได้รับแจ้งโอนแล้ว',

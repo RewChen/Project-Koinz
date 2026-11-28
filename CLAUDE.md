@@ -26,6 +26,7 @@ src/app.js           createApp(): ทุก route
 public/js/config.js  window.KOINZ_API (ค่าว่าง = โดเมนเดียวกัน) · common.js มี api(), apiUrl(), esc(), STATUS, ICON, remember, playerText()
 public/js/pile.js    renderPile(svg, level, label) + pileLevel(packages, id) — กองเหรียญ voxel
 public/index.html    หน้าแรก + เติมเกม (?game=<slug>) · game.html เป็นแค่ redirect · order.html มี 4 มุมมองตามสถานะ
+public/login|signup|forgot|reset|account.html  หน้าสมาชิก (โครงเปล่า วาดด้วย js/auth.js และ js/account.js) · บน GitHub Pages ส่งไปเว็บหลัก
 test/helpers.js      startServer() (spawn server.js + โฟลเดอร์ข้อมูล/DB ชั่วคราว), fakeServer() สำหรับ supplier/lookup/alert
 test/*.test.js       api.test.js (ร้าน/หลังบ้าน) · auth.test.js (สมาชิก) — npm test รันเฉพาะ test/*.test.js
 .github/workflows/deploy.yml   deploy public/ ขึ้น Pages (ไม่รวม admin.html)

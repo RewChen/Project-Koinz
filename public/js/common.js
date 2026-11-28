@@ -27,6 +27,10 @@ const ICON = (() => {
     search: (s = 16) => svg(s, 1.9, '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>'),
     chevron: svg(14, 2.2, '<path d="M6 9l6 6 6-6"/>'),
     retry: svg(38, 2, '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/>'),
+    // ตา: shown = true → มีขีดทับ (กดแล้วจะซ่อน)
+    eye: (shown) => svg(20, 1.8, '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>' + (shown ? '<path d="M4 4l16 16"/>' : '')),
+    mail: (s = 36) => svg(s, 1.9, '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>'),
+    close: svg(16, 2, '<path d="M6 6l12 12"/><path d="M18 6L6 18"/>'),
   };
 })();
 
@@ -97,9 +101,52 @@ async function api(url, { method = 'GET', body, headers = {} } = {}) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง');
+  if (!res.ok) {
+    const err = new Error(data.error || 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง');
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
   return data;
 }
+
+// ระบบสมาชิกใช้ cookie (SameSite=Lax) จึงใช้ได้เฉพาะตอนหน้าเว็บกับ API อยู่โดเมนเดียวกัน
+// หน้าเว็บบน GitHub Pages (KOINZ_API เป็นโดเมนอื่น) → ลิงก์สมาชิกพาไปหน้าเดียวกันบนเว็บหลักแทน
+const memberSite = (() => {
+  let remote = '';
+  try {
+    const base = String(window.KOINZ_API || '').replace(/\/+$/, '');
+    if (base && new URL(base, location.href).origin !== location.origin) remote = base;
+  } catch { /* KOINZ_API ผิดรูปแบบ */ }
+  return { remote, url: (page) => (remote ? `${remote}/${page}` : page) };
+})();
+
+// สถานะล็อกอิน → { email } หรือ null (เรียกครั้งเดียวต่อหน้า)
+let memberPromise = null;
+function memberStatus() {
+  if (!memberPromise) {
+    memberPromise = memberSite.remote
+      ? Promise.resolve(null)
+      : api('/api/auth/session').then((r) => r.member || null).catch(() => null);
+  }
+  return memberPromise;
+}
+
+// ?next= ได้เฉพาะ path ภายในเว็บ (ขึ้นต้นด้วย / แต่ไม่ใช่ // หรือ /\) กัน open redirect
+function safeNext(raw) {
+  const v = String(raw || '');
+  if (!/^\/(?![/\\])/.test(v) || /[\u0000-\u001f\\]/.test(v)) return '';
+  try {
+    const u = new URL(v, location.origin);
+    return u.origin === location.origin ? u.pathname + u.search + u.hash : '';
+  } catch {
+    return '';
+  }
+}
+
+// ลิงก์ไปหน้าเข้าสู่ระบบ แล้วกลับมาหน้าปัจจุบัน
+const loginHref = (page = 'login.html') =>
+  memberSite.remote ? memberSite.url(page) : `${page}?next=${encodeURIComponent(location.pathname + location.search)}`;
 
 // เก็บออเดอร์ของลูกค้าไว้ในเครื่อง เพื่อกลับมาดูสถานะได้
 const myOrders = {
