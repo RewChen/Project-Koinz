@@ -81,14 +81,17 @@ koinz/
 │   ├── orders.js          # สถานะออเดอร์, transition(), audit log, event bus
 │   ├── jobs.js            # คิวเติมเกม + retry, กวาดออเดอร์หมดอายุ
 │   ├── adapters.js        # ตรวจชื่อในเกม, supplier, แจ้งเตือนแอดมิน
-│   ├── security.js        # rate limit, security headers, CORS
+│   ├── security.js        # rate limit, security headers, CORS, กัน CSRF (sameOriginOnly)
+│   ├── auth/              # ระบบสมาชิก: password.js (scrypt + นโยบาย), session.js (cookie koinz_sid), members.js, routes.js
 │   ├── app.js             # createApp(): ทุก route
 │   └── promptpay.js       # สร้าง payload QR PromptPay (ห้ามแก้)
 ├── data/                  # (หรือโฟลเดอร์ใน KOINZ_DATA_DIR)
 │   ├── games.json         # เกม ช่องข้อมูลผู้เล่น แพ็กเกจ ราคา
 │   ├── orders.json        # ออเดอร์ (สร้างอัตโนมัติ)
 │   ├── jobs.json          # คิวเติมเกม (สร้างอัตโนมัติ)
-│   └── audit.json         # ประวัติการเปลี่ยนแปลง 5,000 รายการล่าสุด (สร้างอัตโนมัติ)
+│   ├── audit.json         # ประวัติการเปลี่ยนแปลง 5,000 รายการล่าสุด (สร้างอัตโนมัติ)
+│   ├── users.json / sessions.json / password_resets.json / saved_players.json   # สมาชิก (สร้างอัตโนมัติ)
+│   └── common-passwords.txt   # รหัสยอดนิยมที่ห้ามใช้ (ใน git)
 ├── docs/games.v2.json     # แคตตาล็อกตัวอย่าง 6 เกม
 ├── public/                # Frontend (ขึ้น GitHub Pages ได้ ทุก path เป็นแบบ relative)
 │   ├── index.html         # หน้าแรก + เติมเกม (?game=<slug>): ชิปเกม, กองเหรียญ, แพ็กเกจ, ช่องผู้เล่นจาก fields, ออเดอร์ของฉัน
@@ -102,6 +105,7 @@ koinz/
 │       └── pile.js        # renderPile(): กองเหรียญ voxel แบบ SVG + animation ตอนเปลี่ยนแพ็กเกจ
 ├── db/
 │   ├── migrations/001_init.sql   # ตาราง games, packages, orders, order_history, audit, jobs
+│   ├── migrations/002_members.sql   # users, sessions, password_resets, saved_players, orders.user_id
 │   ├── migrate.js         # รัน migration (แอปเรียกเองตอนเริ่ม)
 │   └── import-json.js     # ย้าย data/*.json → PostgreSQL
 ├── docker/
@@ -113,7 +117,7 @@ koinz/
 ├── compose.yaml           # app + db (ใช้ร่วม)
 ├── compose.override.yaml  # dev: bind mount, port 3000/5432, Adminer
 ├── compose.prod.yaml      # prod: nginx port 80, NODE_ENV=production, TRUST_PROXY=1
-├── test/api.test.js       # เทส end-to-end (ไฟล์ JSON หรือ PostgreSQL)
+├── test/                  # helpers.js (เปิด server ทดสอบ) · api.test.js · auth.test.js (ไฟล์ JSON หรือ PostgreSQL)
 └── .github/workflows/deploy.yml   # deploy หน้าร้านขึ้น GitHub Pages
 ```
 
@@ -169,6 +173,8 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | `FRONTEND_ORIGIN` | – | โดเมนหน้าร้านที่อยู่คนละที่กับ API (CORS) คั่นหลายอันด้วย `,` เช่น `https://rewchen.github.io` |
 | `TRUST_PROXY` | – | ตั้งเมื่ออยู่หลัง nginx/proxy เช่น `1` หรือ `loopback` (ให้ rate limit เห็น IP จริง) |
 | `RATE_LIMIT_OFF` | `0` | `1` = ปิด rate limit (ใช้ตอนเทสเท่านั้น) |
+| `SESSION_SECRET` | – (สุ่มทุกครั้งที่ start) | ใช้ทำ HMAC ของ IP ใน session สมาชิก — production ต้องตั้งเอง ยาว ≥ 32 ตัว ไม่งั้นไม่ยอมเริ่ม |
+| `TERMS_VERSION` | `2026-11` | เวอร์ชันเงื่อนไขการใช้งานที่บันทึกตอนสมาชิกสมัคร (เปลี่ยนเมื่อแก้เงื่อนไข) |
 | `SITE_BANNER` | – | ข้อความแถบเหลืองบนสุดของทุกหน้า เช่น `เว็บทดสอบ — ห้ามโอนเงินจริง` (ตั้งใน staging เท่านั้น ดู [`docs/staging.md`](docs/staging.md)) |
 
 ## API
@@ -177,7 +183,7 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 
 | Method | Path | ใช้ทำอะไร |
 |---|---|---|
-| GET | `/api/config` | `{shopName, promptPayName, shopLineUrl, lookupEnabled, autoFulfill, orderTtlMinutes}` |
+| GET | `/api/config` | `{shopName, promptPayName, shopLineUrl, lookupEnabled, autoFulfill, orderTtlMinutes, siteBanner}` |
 | GET | `/api/games` | รายชื่อเกม (`slug, name, category, color, currency, initial, minPrice`) |
 | GET | `/api/games/:slug` | เกม + `fields` + `packages` (ไม่มี `sku`/`cost`) |
 | POST | `/api/player/lookup` | `{gameSlug, playerInputs}` → `{nickname, mock}` · 404 ถ้ายังไม่เปิดระบบหรือไม่พบผู้เล่น · 30 ครั้ง/นาที |
@@ -185,6 +191,17 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | GET | `/api/orders/:id?t=token` | ออเดอร์ + `serverTime` + `qr` (เฉพาะตอนรอโอนและยังไม่หมดเวลา) |
 | GET | `/api/orders/:id/events?t=token` | SSE: `event: status` ทุกครั้งที่สถานะเปลี่ยน, `: ping` ทุก 25 วินาที |
 | POST | `/api/orders/:id/notify` | `{t, note?, lineId?}` ลูกค้าแจ้งโอน (จาก `pending_payment` หรือ `expired`) · 10 ครั้ง/นาที |
+
+### สมาชิก (cookie `koinz_sid`)
+
+ทุก POST ต้องเป็น `Content-Type: application/json` และ `Origin` เป็นโดเมนเว็บเอง (หรืออยู่ใน `FRONTEND_ORIGIN`) ไม่งั้น `403` · ทุก response มี `Cache-Control: no-store`
+
+| Method | Path | ใช้ทำอะไร |
+|---|---|---|
+| POST | `/api/auth/signup` | `{email, password, acceptTerms: true, marketing?}` → `201 {email, createdAt}` + ล็อกอินให้เลย · อีเมลซ้ำ → `409` ข้อความกลาง ๆ · 5 ครั้ง/ชั่วโมง |
+| POST | `/api/auth/login` | `{email, password}` → `{email, createdAt}` · ผิด → `401` ข้อความเดียวเสมอ · ผิด 5 ครั้งใน 15 นาที → `423 {error, lockedUntil, retryAfter}` 15 นาที · 10 ครั้ง/นาที |
+| POST | `/api/auth/logout` | ลบ session ปัจจุบัน + ล้าง cookie |
+| GET | `/api/me` | `{email, createdAt, sessionCount}` หรือ `401` |
 
 ### Webhook
 

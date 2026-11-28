@@ -92,6 +92,45 @@ function rowToJob(j) {
   return o;
 }
 
+function rowToUser(u) {
+  return {
+    id: u.id,
+    email: u.email,
+    passwordHash: u.password_hash,
+    termsVersion: u.terms_version,
+    termsAcceptedAt: iso(u.terms_accepted_at),
+    marketingOptIn: u.marketing_opt_in,
+    failedLogins: u.failed_logins,
+    failedWindowStartedAt: iso(u.failed_window_started_at),
+    lockedUntil: iso(u.locked_until),
+    createdAt: iso(u.created_at),
+    updatedAt: iso(u.updated_at),
+    deletedAt: iso(u.deleted_at),
+  };
+}
+
+function rowToSession(s) {
+  return {
+    id: s.id,
+    userId: s.user_id,
+    createdAt: iso(s.created_at),
+    lastSeenAt: iso(s.last_seen_at),
+    expiresAt: iso(s.expires_at),
+    userAgent: s.user_agent,
+    ipHash: s.ip_hash,
+  };
+}
+
+function rowToReset(r) {
+  return {
+    tokenHash: r.token_hash,
+    userId: r.user_id,
+    createdAt: iso(r.created_at),
+    expiresAt: iso(r.expires_at),
+    usedAt: iso(r.used_at),
+  };
+}
+
 // ฟิลด์ของออเดอร์ที่แก้ผ่าน transition ได้ → ชื่อคอลัมน์
 const ORDER_COLUMNS = {
   status: 'status',
@@ -360,6 +399,104 @@ function createPgRepo(connectionString) {
         WHERE o.status = 'paid'
           AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.order_id = o.id AND NOT j.done)`);
       return r.rows.map((x) => x.id);
+    },
+
+    // ---------- สมาชิก ----------
+    async createUser(u) {
+      const r = await pool.query(
+        `INSERT INTO users (id, email, password_hash, terms_version, terms_accepted_at, marketing_opt_in, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (email) DO NOTHING
+         RETURNING *`,
+        [u.id, u.email, u.passwordHash, u.termsVersion, u.termsAcceptedAt, !!u.marketingOptIn, u.createdAt, u.updatedAt]
+      );
+      return r.rows.length ? { user: rowToUser(r.rows[0]), created: true } : { user: null, created: false };
+    },
+    async findUserByEmail(email) {
+      const r = await pool.query('SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL', [email]);
+      return r.rows[0] ? rowToUser(r.rows[0]) : null;
+    },
+    async getUser(id) {
+      const r = await pool.query('SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL', [id]);
+      return r.rows[0] ? rowToUser(r.rows[0]) : null;
+    },
+    async recordLoginFailure(id, { now, windowStart, max, lockUntil }) {
+      return tx(async (c) => {
+        const r = await c.query(
+          `UPDATE users SET
+             failed_logins = CASE WHEN failed_window_started_at IS NULL OR failed_window_started_at <= $2::timestamptz
+                                  THEN 1 ELSE failed_logins + 1 END,
+             failed_window_started_at = CASE WHEN failed_window_started_at IS NULL OR failed_window_started_at <= $2::timestamptz
+                                             THEN $1::timestamptz ELSE failed_window_started_at END,
+             updated_at = $1::timestamptz
+           WHERE id = $3 AND deleted_at IS NULL
+           RETURNING failed_logins, locked_until`,
+          [now, windowStart, id]
+        );
+        if (!r.rows.length) return { locked: false, lockedUntil: null };
+        if (r.rows[0].failed_logins < max) return { locked: false, lockedUntil: iso(r.rows[0].locked_until) };
+        await c.query(
+          'UPDATE users SET locked_until = $2, failed_logins = 0, failed_window_started_at = NULL WHERE id = $1',
+          [id, lockUntil]
+        );
+        return { locked: true, lockedUntil: iso(lockUntil) };
+      });
+    },
+    async recordLoginSuccess(id, { now, passwordHash = null }) {
+      await pool.query(
+        `UPDATE users SET failed_logins = 0, failed_window_started_at = NULL, locked_until = NULL, updated_at = $2,
+           password_hash = COALESCE($3, password_hash)
+         WHERE id = $1`,
+        [id, now, passwordHash]
+      );
+    },
+
+    // ---------- session (id = sha256 ของ token) ----------
+    async createSession(s) {
+      await pool.query(
+        `INSERT INTO sessions (id, user_id, created_at, last_seen_at, expires_at, user_agent, ip_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [s.id, s.userId, s.createdAt, s.lastSeenAt, s.expiresAt, s.userAgent ?? null, s.ipHash ?? null]
+      );
+    },
+    async getSession(id) {
+      const r = await pool.query('SELECT * FROM sessions WHERE id = $1', [id]);
+      return r.rows[0] ? rowToSession(r.rows[0]) : null;
+    },
+    async touchSession(id, now) {
+      await pool.query('UPDATE sessions SET last_seen_at = $2 WHERE id = $1', [id, now]);
+    },
+    async deleteSession(id) {
+      await pool.query('DELETE FROM sessions WHERE id = $1', [id]);
+    },
+    async deleteUserSessions(userId, exceptId = null) {
+      const r = await pool.query('DELETE FROM sessions WHERE user_id = $1 AND id IS DISTINCT FROM $2', [userId, exceptId]);
+      return r.rowCount;
+    },
+    async countActiveSessions(userId, { now, idleCutoff }) {
+      const r = await pool.query(
+        'SELECT count(*)::int AS n FROM sessions WHERE user_id = $1 AND expires_at > $2 AND last_seen_at > $3',
+        [userId, now, idleCutoff]
+      );
+      return r.rows[0].n;
+    },
+    async deleteStaleSessions({ now, idleCutoff }) {
+      await pool.query('DELETE FROM sessions WHERE expires_at <= $1 OR last_seen_at <= $2', [now, idleCutoff]);
+    },
+
+    // ---------- ลิงก์ตั้งรหัสผ่านใหม่ (token_hash = sha256 ของ token) ----------
+    async createPasswordReset(r) {
+      await pool.query(
+        'INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4)',
+        [r.tokenHash, r.userId, r.createdAt, r.expiresAt]
+      );
+    },
+    async getPasswordReset(tokenHash) {
+      const r = await pool.query('SELECT * FROM password_resets WHERE token_hash = $1', [tokenHash]);
+      return r.rows[0] ? rowToReset(r.rows[0]) : null;
+    },
+    async deleteStalePasswordResets(now) {
+      await pool.query('DELETE FROM password_resets WHERE used_at IS NOT NULL OR expires_at <= $1', [now]);
     },
   };
 }

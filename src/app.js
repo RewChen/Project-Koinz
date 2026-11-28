@@ -9,6 +9,7 @@ const orders = require('./orders');
 const adapters = require('./adapters');
 const security = require('./security');
 const jobs = require('./jobs');
+const authRoutes = require('./auth/routes');
 const { promptPayPayload } = require('./promptpay');
 
 const fail = (res, code, error) => res.status(code).json({ error });
@@ -236,6 +237,9 @@ function createApp() {
     }
     res.json({ received: true });
   }));
+
+  // ---------- สมาชิก (/api/auth/*, /api/me/*) ----------
+  authRoutes.mount(app);
 
   // ---------- admin API ----------
   const sessions = new Map(); // token -> expires

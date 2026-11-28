@@ -10,6 +10,8 @@ ENV KOINZ_DATA_DIR=/app/data
 # entrypoint และ seed อยู่นอก /app เพื่อไม่ให้ bind mount ./:/app ของ dev ทับ
 COPY docker/entrypoint.sh /usr/local/bin/koinz-entrypoint
 COPY docs/games.v2.json /seed/games.json
+# รายการรหัสยอดนิยม: สำรองไว้นอก /app/data เพราะ volume ของโหมดไฟล์ JSON mount ทับได้
+COPY data/common-passwords.txt /seed/common-passwords.txt
 RUN sed -i 's/\r$//' /usr/local/bin/koinz-entrypoint \
  && chmod +x /usr/local/bin/koinz-entrypoint \
  && mkdir -p /app/data \

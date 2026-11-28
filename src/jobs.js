@@ -108,6 +108,13 @@ async function cleanup() {
   } catch (e) {
     console.error('ล้างงานเก่าไม่สำเร็จ:', e.message);
   }
+  // session ที่หมดอายุ และลิงก์ตั้งรหัสใหม่ที่ใช้แล้ว/หมดอายุ
+  try {
+    await require('./auth/session').cleanup();
+    await require('./auth/members').cleanup();
+  } catch (e) {
+    console.error('ล้าง session เก่าไม่สำเร็จ:', e.message);
+  }
 }
 
 let sweeping = false;

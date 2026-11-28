@@ -1,6 +1,7 @@
 // อ่านค่าตั้งค่าทั้งหมดจาก environment ที่เดียว
 require('./env');
 const path = require('path');
+const crypto = require('crypto');
 
 const env = process.env;
 const str = (v, d = '') => (v === undefined || v === '' ? d : String(v).trim());
@@ -54,6 +55,11 @@ const config = {
   rateLimitOff: bool(env.RATE_LIMIT_OFF),
   // ข้อความแถบเหลืองบนสุดของทุกหน้า (ใช้ใน staging) เว้นว่าง = ไม่แสดง
   siteBanner: str(env.SITE_BANNER).slice(0, 200),
+
+  // ระบบสมาชิก
+  // ใช้ทำ HMAC ของ IP ใน session — production ต้องตั้ง ≥32 ตัว, เครื่อง dev ไม่ตั้ง = สุ่มใหม่ทุกครั้งที่ start
+  sessionSecret: str(env.SESSION_SECRET),
+  termsVersion: str(env.TERMS_VERSION, '2026-11').slice(0, 40),
 };
 
 // TRUST_PROXY: ว่าง = ไม่ตั้ง, ตัวเลข = จำนวน proxy, true/false, หรือค่าอื่นของ Express เช่น loopback
@@ -68,6 +74,8 @@ config.isProduction = config.nodeEnv === 'production';
 config.lookupEnabled = !!config.lookupApiUrl || config.lookupMock;
 config.autoFulfill = !!(config.supplierApiUrl && config.supplierApiKey);
 config.webhookEnabled = !!config.paymentWebhookSecret;
+config.sessionSecretSet = !!config.sessionSecret;
+if (!config.sessionSecret) config.sessionSecret = crypto.randomBytes(32).toString('base64url');
 
 // ปัญหาที่ทำให้ไม่ควร start บน production
 config.startupProblems = () => {
@@ -76,6 +84,9 @@ config.startupProblems = () => {
     const weak = ['admin1234', 'change-me-please'];
     if (!config.adminPasswordSet || weak.includes(config.adminPassword) || config.adminPassword.length < 12) {
       problems.push('ADMIN_PASSWORD ต้องตั้งเอง และยาวอย่างน้อย 12 ตัวอักษร (ห้ามใช้ค่าตัวอย่าง)');
+    }
+    if (!config.sessionSecretSet || config.sessionSecret.length < 32) {
+      problems.push('SESSION_SECRET ต้องตั้งเอง และยาวอย่างน้อย 32 ตัวอักษร (สุ่มด้วย node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64url\'))")');
     }
   }
   return problems;

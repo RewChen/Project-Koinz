@@ -13,3 +13,7 @@ data/jobs.json
 data/audit.json
 data/*.tmp
 compose*.yaml
+data/users.json
+data/sessions.json
+data/password_resets.json
+data/saved_players.json
