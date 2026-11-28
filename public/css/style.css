@@ -510,3 +510,56 @@ svg { flex: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- เข้าสู่ระบบ / สมัครสมาชิก ---------- */
+.auth-page { min-height: 100vh; display: grid; place-items: center; padding: 28px; background: var(--paper); }
+.auth-shell { width: min(1120px, 100%); min-height: min(760px, calc(100vh - 56px)); display: grid; grid-template-columns: 1fr .92fr; overflow: hidden; border: 1px solid var(--line); border-radius: 30px; background: var(--card); }
+.auth-form-side { display: flex; flex-direction: column; padding: 26px 42px 22px; }
+.auth-logo { align-self: flex-start; }
+.auth-content { width: min(390px, 100%); margin: auto; padding: 42px 0; }
+.auth-eyebrow, .auth-art-kicker { color: var(--red); font-size: 12px; font-weight: 700; letter-spacing: .1em; }
+.auth-content h1 { margin-top: 8px; font-size: 32px; }
+.auth-intro { margin-top: 8px; color: var(--muted); font-size: 14px; }
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 28px 0 22px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); }
+.auth-tab { min-height: 42px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-weight: 600; }
+.auth-tab.is-active { background: var(--card); color: var(--ink); }
+.auth-form { display: flex; flex-direction: column; gap: 8px; }
+.auth-form label { margin-top: 8px; font-size: 13px; font-weight: 600; }
+.auth-form input { width: 100%; min-height: 52px; padding: 0 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); outline: none; }
+.auth-form input:focus { border-color: var(--ink-2); box-shadow: 0 0 0 3px var(--line-soft); }
+.auth-password { position: relative; }
+.auth-password input { padding-right: 70px; }
+.auth-password button { position: absolute; top: 4px; right: 5px; min-width: 58px; min-height: 44px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; }
+.auth-help { margin: 1px 0 12px; color: var(--muted); font-size: 12px; }
+.auth-submit { width: 100%; min-height: 52px; border-radius: 14px; }
+.auth-message { min-height: 22px; margin-top: 3px; color: var(--green); font-size: 13px; }
+.auth-message.is-error { color: var(--red-ink); }
+.auth-back { display: inline-flex; align-items: center; min-height: 44px; margin-top: 8px; color: var(--muted); font-size: 13px; text-decoration: none; }
+.auth-back:hover { color: var(--red); }
+.auth-foot { color: var(--muted); font-size: 12px; }
+.auth-art { position: relative; display: flex; min-height: 560px; align-items: flex-start; overflow: hidden; padding: 72px 56px; background: #E9E5DD; }
+.auth-art::before, .auth-art::after { position: absolute; content: ""; border: 1px solid rgba(23,24,28,.12); border-radius: 50%; }
+.auth-art::before { width: 460px; height: 460px; right: -65px; bottom: -100px; }
+.auth-art::after { width: 340px; height: 340px; right: -5px; bottom: -38px; }
+.auth-art-copy { position: relative; z-index: 1; max-width: 360px; }
+.auth-mark { display: grid; width: 46px; height: 46px; place-items: center; margin-bottom: 28px; border-radius: 14px; background: var(--red); color: white; font-size: 24px; font-weight: 700; }
+.auth-art-kicker { color: var(--ink-2); }
+.auth-art h2 { margin-top: 14px; font-size: clamp(28px, 3vw, 38px); line-height: 1.2; }
+.auth-art-copy > p:last-child { max-width: 290px; margin-top: 14px; color: var(--ink-2); font-size: 14px; }
+.auth-coins { position: absolute; z-index: 1; right: 54px; bottom: 95px; display: flex; align-items: flex-end; gap: 8px; height: 180px; }
+.auth-coins i { display: block; width: 28px; height: 54px; border: 1px solid #B97A16; border-radius: 8px; background: #E3A230; box-shadow: inset -7px 0 #C9841C, inset 0 6px #F6C445; }
+.auth-coins i:nth-child(2), .auth-coins i:nth-child(6) { height: 84px; }
+.auth-coins i:nth-child(3), .auth-coins i:nth-child(5) { height: 115px; }
+.auth-coins i:nth-child(4) { height: 148px; }
+.auth-coins i:nth-child(7) { height: 84px; }
+.auth-coins i:nth-child(8) { height: 54px; }
+.auth-coins b { position: absolute; z-index: -1; right: -18px; bottom: -14px; left: -18px; height: 20px; border: 1px solid var(--line); border-radius: 50%; background: #D0D1CA; }
+@media (max-width: 899px) {
+  .auth-page { padding: 0; }
+  .auth-shell { min-height: 100vh; grid-template-columns: 1fr; border: 0; border-radius: 0; }
+  .auth-form-side { min-height: 100vh; padding: 18px 24px 16px; }
+  .auth-content { width: min(410px, 100%); padding: 48px 0; }
+  .auth-content h1 { font-size: 28px; }
+  .auth-art { display: none; }
+  .auth-foot { text-align: center; }
+}

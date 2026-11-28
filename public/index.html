@@ -16,6 +16,8 @@
       <nav class="navlinks" aria-label="เมนูหลัก">
         <a class="desk first" href="#games">เกมทั้งหมด</a>
         <a href="#mine">ออเดอร์ของฉัน</a>
+        <a id="customer-link" href="login.html">เข้าสู่ระบบ</a>
+        <button id="customer-logout" class="btn-link" type="button" hidden>ออกจากระบบ</button>
         <a class="desk" id="contact" href="#" hidden>ติดต่อร้าน</a>
       </nav>
     </header>
@@ -301,6 +303,19 @@
     }
 
     // ---------- เริ่ม ----------
+    const customerToken = sessionStorage.getItem('koinz_customer');
+    if (customerToken) fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + customerToken } })
+      .then(async (r) => {
+        if (!r.ok) { sessionStorage.removeItem('koinz_customer'); sessionStorage.removeItem('koinz_customer_name'); return; }
+        const { user } = await r.json();
+        $('#customer-link').textContent = user.name;
+        $('#customer-logout').hidden = false;
+      }).catch(() => {});
+    $('#customer-logout').addEventListener('click', async () => {
+      const token = sessionStorage.getItem('koinz_customer');
+      await fetch('/api/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + (token || '') } }).catch(() => {});
+      sessionStorage.removeItem('koinz_customer'); sessionStorage.removeItem('koinz_customer_name'); location.reload();
+    });
     $('#arrow-d').outerHTML = ICON.arrow(18);
     renderMine();
     Promise.all([api('/api/games'), shopConfig])
