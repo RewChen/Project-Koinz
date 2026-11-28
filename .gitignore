@@ -5,3 +5,8 @@ data/audit.json
 data/jobs.json
 data/*.tmp
 backups/
+.claude/
+data/users.json
+data/sessions.json
+data/password_resets.json
+data/saved_players.json

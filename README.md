@@ -7,7 +7,7 @@
 - Webhook ยืนยันการชำระเงินแบบ HMAC (รับยอดที่โอนมาหลังหมดเวลาด้วย)
 - คิวเติมเกมอัตโนมัติพร้อม retry ทำต่อได้หลังรีสตาร์ท
 - หลังบ้าน: สรุปยอด ค้นหา ปุ่มลัด และ audit log ทุกการเปลี่ยนสถานะ
-- Rate limit, security headers, ลิงก์ออเดอร์ต้องมี token
+- Rate limit, security headers + Content-Security-Policy (ไม่มี inline script), ลิงก์ออเดอร์ต้องมี token · รายงานตรวจระบบสมาชิก: [`docs/security-review.md`](docs/security-review.md)
 
 ## เริ่มใช้งาน (Windows)
 
@@ -81,27 +81,41 @@ koinz/
 │   ├── orders.js          # สถานะออเดอร์, transition(), audit log, event bus
 │   ├── jobs.js            # คิวเติมเกม + retry, กวาดออเดอร์หมดอายุ
 │   ├── adapters.js        # ตรวจชื่อในเกม, supplier, แจ้งเตือนแอดมิน
-│   ├── security.js        # rate limit, security headers, CORS
+│   ├── security.js        # rate limit, security headers + CSP (+ HSTS บน production), CORS, กัน CSRF (sameOriginOnly)
+│   ├── auth/              # ระบบสมาชิก: password.js (scrypt + นโยบาย), session.js (cookie koinz_sid), members.js, routes.js
 │   ├── app.js             # createApp(): ทุก route
 │   └── promptpay.js       # สร้าง payload QR PromptPay (ห้ามแก้)
 ├── data/                  # (หรือโฟลเดอร์ใน KOINZ_DATA_DIR)
 │   ├── games.json         # เกม ช่องข้อมูลผู้เล่น แพ็กเกจ ราคา
 │   ├── orders.json        # ออเดอร์ (สร้างอัตโนมัติ)
 │   ├── jobs.json          # คิวเติมเกม (สร้างอัตโนมัติ)
-│   └── audit.json         # ประวัติการเปลี่ยนแปลง 5,000 รายการล่าสุด (สร้างอัตโนมัติ)
+│   ├── audit.json         # ประวัติการเปลี่ยนแปลง 5,000 รายการล่าสุด (สร้างอัตโนมัติ)
+│   ├── users.json / sessions.json / password_resets.json / saved_players.json   # สมาชิก (สร้างอัตโนมัติ)
+│   └── common-passwords.txt   # รหัสยอดนิยมที่ห้ามใช้ (ใน git)
 ├── docs/games.v2.json     # แคตตาล็อกตัวอย่าง 6 เกม
 ├── public/                # Frontend (ขึ้น GitHub Pages ได้ ทุก path เป็นแบบ relative)
 │   ├── index.html         # หน้าแรก + เติมเกม (?game=<slug>): ชิปเกม, กองเหรียญ, แพ็กเกจ, ช่องผู้เล่นจาก fields, ออเดอร์ของฉัน
 │   ├── game.html          # redirect เก่า: game.html?slug=x → ./?game=x
 │   ├── order.html         # สแกนจ่าย / QR หมดอายุ / สถานะ (SSE) / เติมไม่สำเร็จ-คืนเงิน
+│   ├── login.html / signup.html   # เข้าสู่ระบบ / สมัครสมาชิก (คอม: แท็บสลับกันได้) · ?next=/path กลับหน้าเดิม
+│   ├── forgot.html        # ลืมรหัสผ่าน → "ตรวจอีเมลของคุณ" + ส่งซ้ำได้ทุก 60 วิ
+│   ├── reset.html         # ตั้งรหัสใหม่จากลิงก์อีเมล (#token=…) / ?mode=change = เปลี่ยนรหัสผ่าน
+│   ├── account.html       # บัญชีของฉัน: ผูกออเดอร์ในเครื่อง, UID ที่บันทึก, ออเดอร์, ความปลอดภัย, ลบบัญชี
+│   ├── terms.html / privacy.html   # เงื่อนไขการใช้งาน / นโยบายความเป็นส่วนตัว (ร่าง — แก้แล้วเปลี่ยน TERMS_VERSION)
+│   ├── about.html / refund.html    # เกี่ยวกับร้าน + ติดต่อ + FAQ / นโยบายคืนเงิน (ข้อมูลร้านจาก env ผ่าน fillShopInfo())
 │   ├── admin.html         # หลังบ้าน (ไม่ขึ้น Pages)
 │   ├── css/style.css      # design tokens (:root) + ทุก component · breakpoint เดียว 900px
 │   └── js/
 │       ├── config.js      # URL ของ API (ค่าว่าง = โดเมนเดียวกัน)
-│       ├── common.js      # api(), esc(), ไอคอน SVG, remember (จำ UID ต่อเกม), myOrders
+│       ├── common.js      # api(), esc(), ไอคอน SVG, remember (จำ UID ต่อเกม), myOrders, memberStatus(), safeNext(), fillShopInfo() (ข้อมูลร้านจาก /api/config → data-shop-field)
+│       ├── shop.js / order.js / admin.js   # สคริปต์ของ index.html / order.html / admin.html (CSP ห้าม inline script)
+│       ├── auth.js        # หน้า login / signup / forgot / reset
+│       ├── account.js     # หน้า account
+│       ├── doc.js / game-redirect.js   # ลิงก์ LINE ในหน้าเอกสาร / redirect ของ game.html
 │       └── pile.js        # renderPile(): กองเหรียญ voxel แบบ SVG + animation ตอนเปลี่ยนแพ็กเกจ
 ├── db/
 │   ├── migrations/001_init.sql   # ตาราง games, packages, orders, order_history, audit, jobs
+│   ├── migrations/002_members.sql   # users, sessions, password_resets, saved_players, orders.user_id
 │   ├── migrate.js         # รัน migration (แอปเรียกเองตอนเริ่ม)
 │   └── import-json.js     # ย้าย data/*.json → PostgreSQL
 ├── docker/
@@ -113,7 +127,7 @@ koinz/
 ├── compose.yaml           # app + db (ใช้ร่วม)
 ├── compose.override.yaml  # dev: bind mount, port 3000/5432, Adminer
 ├── compose.prod.yaml      # prod: nginx port 80, NODE_ENV=production, TRUST_PROXY=1
-├── test/api.test.js       # เทส end-to-end (ไฟล์ JSON หรือ PostgreSQL)
+├── test/                  # helpers.js (เปิด server ทดสอบ) · api.test.js · auth.test.js · shop-info.test.js (ไฟล์ JSON หรือ PostgreSQL)
 └── .github/workflows/deploy.yml   # deploy หน้าร้านขึ้น GitHub Pages
 ```
 
@@ -156,7 +170,16 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | `POSTGRES_PASSWORD` | – | รหัสผ่าน PostgreSQL สำหรับ Docker Compose (จำเป็นเมื่อใช้ Docker) |
 | `TEST_DATABASE_URL` | – | ใช้กับ `npm run test:pg` เท่านั้น: เทสจะสร้าง/ลบฐานข้อมูลชั่วคราวผ่าน connection นี้ |
 | `ORDER_TTL_MINUTES` | `15` | เวลาให้ลูกค้าโอน (นาที, ใส่ทศนิยมได้) |
-| `SHOP_LINE_URL` | – | ลิงก์ LINE ร้าน แสดงในหน้าออเดอร์ |
+| `SHOP_LINE_URL` | – | ลิงก์ LINE ร้าน (ต้องเป็น `https://`) แสดงในหน้าออเดอร์ / ติดต่อ / คืนเงิน |
+| `SHOP_LINE_ID` | – | LINE ID ที่แสดงเป็นข้อความในหน้าเกี่ยวกับร้าน เช่น `@koinz` (ว่าง = ซ่อนแถว) |
+| `SHOP_FACEBOOK_URL` | – | ลิงก์เพจ Facebook (ต้องเป็น `https://` ไม่งั้นไม่แสดง) |
+| `SHOP_FACEBOOK_NAME` | – | ชื่อเพจที่แสดง (ว่าง = "เพจ Facebook") |
+| `SHOP_HOURS` | – | เวลาตอบแชท เช่น `ทุกวัน 10:00–22:00` (ว่าง = ซ่อนกล่องเวลา) |
+| `SHOP_LEGAL_NAME` | – | ชื่อผู้ประกอบการ / บริษัท (บรรทัดท้ายหน้าเกี่ยวกับร้าน) |
+| `SHOP_DBD_ID` | – | เลขทะเบียนพาณิชย์อิเล็กทรอนิกส์ (ถ้ามี) |
+| `FULFILL_TARGET_MINUTES` | `15` | เวลาเติมโดยประมาณในเวลาทำการ (นาที) ที่แสดงในหน้าเกี่ยวกับร้าน |
+| `REFUND_HOURS` | `24` | คืนเงินภายในกี่ชั่วโมง (หน้านโยบายคืนเงิน) |
+| `STUCK_ORDER_HOURS` | `1` | โอนแล้วสถานะไม่ขยับเกินกี่ชั่วโมงให้ลูกค้าทักร้าน |
 | `PAYMENT_WEBHOOK_SECRET` | – | รหัสลับตรวจลายเซ็น webhook ชำระเงิน — เว้นว่าง = ปิด webhook (404) |
 | `SUPPLIER_API_URL` | – | URL ของ supplier เติมเกม (ต้องตั้งคู่กับ KEY ถึงจะเปิดเติมอัตโนมัติ) |
 | `SUPPLIER_API_KEY` | – | API key ของ supplier (ส่งเป็น `Authorization: Bearer`) |
@@ -169,6 +192,17 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 | `FRONTEND_ORIGIN` | – | โดเมนหน้าร้านที่อยู่คนละที่กับ API (CORS) คั่นหลายอันด้วย `,` เช่น `https://rewchen.github.io` |
 | `TRUST_PROXY` | – | ตั้งเมื่ออยู่หลัง nginx/proxy เช่น `1` หรือ `loopback` (ให้ rate limit เห็น IP จริง) |
 | `RATE_LIMIT_OFF` | `0` | `1` = ปิด rate limit (ใช้ตอนเทสเท่านั้น) |
+| `SESSION_SECRET` | – (สุ่มทุกครั้งที่ start) | ใช้ทำ HMAC ของ IP ใน session สมาชิก — production ต้องตั้งเอง ยาว ≥ 32 ตัว ไม่งั้นไม่ยอมเริ่ม |
+| `TERMS_VERSION` | `2026-11` | เวอร์ชันเงื่อนไขการใช้งานที่บันทึกตอนสมาชิกสมัคร (เปลี่ยนเมื่อแก้เงื่อนไข) |
+| `LINE_LOGIN_ENABLED` | `0` | `1` = แสดงปุ่มเข้าสู่ระบบด้วย LINE (เฟสถัดไป) |
+| `MAIL_PROVIDER` | – | `resend` = ส่งอีเมลจริง · `log` = เขียนลง log (ทดสอบ) · ว่าง = ปิด "ลืมรหัสผ่าน?" (`/api/config` ส่ง `passwordResetEnabled: false`) |
+| `RESEND_API_KEY` | – | API key ของ Resend (ใช้คู่กับ `MAIL_PROVIDER=resend` และ `MAIL_FROM`) |
+| `MAIL_FROM` | – | ผู้ส่งอีเมล เช่น `Koinz <no-reply@โดเมนร้าน>` (โดเมนต้องยืนยันใน Resend แล้ว) |
+| `MAIL_LOG_LINKS` | `0` | `1` = เขียนเนื้ออีเมล (มีลิงก์รีเซ็ต) ลง log — production ต้องตั้ง `SITE_BANNER` ด้วย (= staging) ไม่งั้นไม่ยอมเริ่ม |
+| `RESEND_API_URL` | `https://api.resend.com` | ที่อยู่ API ของ Resend (เปลี่ยนเฉพาะตอนเทส) |
+| `PUBLIC_URL` | โดเมน Railway / `http://localhost:<PORT>` | URL หน้าเว็บที่ใช้ในลิงก์ทางอีเมล (ไม่ใช้ Host header เพราะปลอมได้) — ตั้งเมื่อใช้โดเมนของร้านเอง |
+| `RAILWAY_PUBLIC_DOMAIN` | – | Railway ใส่ให้เอง ใช้เป็นค่าเริ่มต้นของ `PUBLIC_URL` |
+| `SITE_BANNER` | – | ข้อความแถบเหลืองบนสุดของทุกหน้า เช่น `เว็บทดสอบ — ห้ามโอนเงินจริง` (ตั้งใน staging เท่านั้น ดู [`docs/staging.md`](docs/staging.md)) |
 
 ## API
 
@@ -176,14 +210,38 @@ pending_payment ─แจ้งโอน─▶ paid_pending_review ─ยืน�
 
 | Method | Path | ใช้ทำอะไร |
 |---|---|---|
-| GET | `/api/config` | `{shopName, promptPayName, shopLineUrl, lookupEnabled, autoFulfill, orderTtlMinutes}` |
+| GET | `/api/config` | `{shopName, promptPayName, shopLineUrl, lookupEnabled, autoFulfill, orderTtlMinutes, siteBanner, passwordResetEnabled, lineLoginEnabled}` |
 | GET | `/api/games` | รายชื่อเกม (`slug, name, category, color, currency, initial, minPrice`) |
 | GET | `/api/games/:slug` | เกม + `fields` + `packages` (ไม่มี `sku`/`cost`) |
 | POST | `/api/player/lookup` | `{gameSlug, playerInputs}` → `{nickname, mock}` · 404 ถ้ายังไม่เปิดระบบหรือไม่พบผู้เล่น · 30 ครั้ง/นาที |
-| POST | `/api/orders` | `{gameSlug, packageId, playerInputs, contact?, idempotencyKey?}` → `201 {id, token}` (key ซ้ำ → `200` ออเดอร์เดิม) · 20 ครั้ง/นาที |
-| GET | `/api/orders/:id?t=token` | ออเดอร์ + `serverTime` + `qr` (เฉพาะตอนรอโอนและยังไม่หมดเวลา) |
-| GET | `/api/orders/:id/events?t=token` | SSE: `event: status` ทุกครั้งที่สถานะเปลี่ยน, `: ping` ทุก 25 วินาที |
-| POST | `/api/orders/:id/notify` | `{t, note?, lineId?}` ลูกค้าแจ้งโอน (จาก `pending_payment` หรือ `expired`) · 10 ครั้ง/นาที |
+| POST | `/api/orders` | `{gameSlug, packageId, playerInputs, contact?, idempotencyKey?}` → `201 {id, token}` (key ซ้ำ → `200` ออเดอร์เดิม) · 20 ครั้ง/นาที · ล็อกอินอยู่ = ผูกกับบัญชี + จำ UID |
+| GET | `/api/orders/:id?t=token` | ออเดอร์ + `serverTime` + `qr` (เฉพาะตอนรอโอนและยังไม่หมดเวลา) · ไม่มี `t` = ใช้ session ของสมาชิกที่เป็นเจ้าของออเดอร์แทน (หน้าบัญชี) |
+| GET | `/api/orders/:id/events?t=token` | SSE: `event: status` ทุกครั้งที่สถานะเปลี่ยน, `: ping` ทุก 25 วินาที · ไม่มี `t` = session เจ้าของ |
+| POST | `/api/orders/:id/notify` | `{t, note?, lineId?}` ลูกค้าแจ้งโอน (จาก `pending_payment` หรือ `expired`) · 10 ครั้ง/นาที · ไม่มี `t` = session เจ้าของ และต้องมี `Origin` ของเว็บเอง |
+
+### สมาชิก (cookie `koinz_sid`)
+
+ทุก POST ต้องเป็น `Content-Type: application/json` และ `Origin` เป็นโดเมนเว็บเอง (หรืออยู่ใน `FRONTEND_ORIGIN`) ไม่งั้น `403` · ทุก response มี `Cache-Control: no-store`
+
+| Method | Path | ใช้ทำอะไร |
+|---|---|---|
+| POST | `/api/auth/signup` | `{email, password, acceptTerms: true, marketing?}` → `201 {email, createdAt}` + ล็อกอินให้เลย · อีเมลซ้ำ → `409` ข้อความกลาง ๆ · 5 ครั้ง/ชั่วโมง |
+| POST | `/api/auth/login` | `{email, password}` → `{email, createdAt}` · ผิด → `401` ข้อความเดียวเสมอ · ผิด 5 ครั้งใน 15 นาที → `423 {error, lockedUntil, retryAfter}` 15 นาที · 10 ครั้ง/นาที |
+| GET | `/api/auth/session` | `{member: {email}}` หรือ `{member: null}` (ตอบ 200 เสมอ — หน้าเว็บใช้เช็คว่าล็อกอินอยู่ไหม) |
+| POST | `/api/auth/logout` | ลบ session ปัจจุบัน + ล้าง cookie |
+| GET | `/api/me` | `{email, createdAt, sessionCount}` หรือ `401` |
+| POST | `/api/auth/logout-all` | ออกจากระบบทุกอุปกรณ์ (รวมเครื่องนี้) |
+| POST | `/api/auth/forgot` | `{email}` → `200` ข้อความเดียวกันเสมอไม่ว่ามีบัญชีหรือไม่ · ต่ออีเมล 3 ครั้ง/ชม. เว้น 60 วิ (เกิน = ไม่ส่งเงียบ ๆ) · ต่อ IP 10 ครั้ง/ชม. · ปิดอีเมลอยู่ → `503` |
+| GET | `/api/auth/reset/:token` | `{valid: true, email}` หรือ `404 {valid: false}` (ไม่บอกอีเมล) |
+| POST | `/api/auth/reset/verify` | `{token}` → ผลเหมือนบรรทัดบน แต่ token อยู่ใน body ไม่ติด access log (หน้า reset.html ใช้ตัวนี้) |
+| GET | `/api/password-policy` | `{minLength, maxLength, common: [...]}` ให้หน้าสมัคร/ตั้งรหัสตรวจขณะพิมพ์ (ข้อมูลสาธารณะ cache 1 วัน ไม่มี no-store) |
+| POST | `/api/auth/reset` | `{token, password, logoutOthers}` → ใช้ได้ครั้งเดียว, ลบลิงก์อื่นของบัญชี, ปลดล็อก, ล็อกอินให้ · `logoutOthers` ไม่ใช่ `false` = ออกจากระบบเครื่องอื่นทั้งหมด |
+| POST | `/api/me/password` | `{currentPassword, newPassword}` → ออกจากระบบเครื่องอื่นทั้งหมด + อีเมลแจ้ง |
+| GET | `/api/me/orders` | ออเดอร์ของฉัน 50 รายการล่าสุด (ไม่มี `token`, `contact`, `lineId`) |
+| POST | `/api/me/orders/claim` | `[{id, token}]` (จาก localStorage) → `{claimed: [id]}` ผูกเฉพาะที่ token ถูกและยังไม่มีเจ้าของ |
+| GET | `/api/me/players` · `/api/me/players/:gameSlug` | UID ที่บันทึกไว้ `{gameSlug, inputs, label, updatedAt}` (1 รายการต่อเกม อัปเดตทุกครั้งที่สั่งตอนล็อกอิน) |
+| DELETE | `/api/me/players/:gameSlug` | ลบ UID ที่บันทึกของเกมนั้น |
+| POST | `/api/me/delete` | `{password}` → ลบบัญชี (PDPA): ลบ session/UID/ลิงก์รีเซ็ต, users เหลือแถวแบบไม่มีข้อมูลส่วนตัว, ออเดอร์เก่าเก็บไว้แต่ไม่ผูก |
 
 ### Webhook
 

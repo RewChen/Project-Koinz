@@ -5,149 +5,12 @@ const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const express = require('express');
 
-const ROOT = path.join(__dirname, '..');
-const GAMES = path.join(ROOT, 'docs', 'games.v2.json');
-const ADMIN_PASSWORD = 'test-password-1234';
-
-// ค่า env ที่เกี่ยวข้องทั้งหมด ตั้งเป็นค่าว่างไว้ก่อน กันค่าจาก .env ของเครื่องหลุดเข้ามา
-const BASE_ENV = {
-  PORT: '0',
-  NODE_ENV: 'test',
-  ADMIN_PASSWORD,
-  RATE_LIMIT_OFF: '1',
-  ORDER_TTL_MINUTES: '15',
-  SHOP_LINE_URL: '',
-  PAYMENT_WEBHOOK_SECRET: '',
-  SUPPLIER_API_URL: '',
-  SUPPLIER_API_KEY: '',
-  FULFILL_ATTEMPTS: '',
-  FULFILL_RETRY_BASE_SECONDS: '',
-  LOOKUP_API_URL: '',
-  LOOKUP_API_KEY: '',
-  LOOKUP_MOCK: '0',
-  ADMIN_ALERT_WEBHOOK: '',
-  FRONTEND_ORIGIN: '',
-  TRUST_PROXY: '',
-  DATABASE_URL: '',
-};
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const PG_ADMIN_URL = process.env.TEST_DATABASE_URL || '';
-
-// PostgreSQL: สร้างฐานข้อมูลว่างใหม่ → { url, drop }
-async function createTestDatabase() {
-  const { Client } = require('pg');
-  const name = 'koinz_t_' + require('node:crypto').randomBytes(5).toString('hex');
-  const admin = new Client({ connectionString: PG_ADMIN_URL });
-  await admin.connect();
-  await admin.query(`CREATE DATABASE ${name}`);
-  await admin.end();
-  const url = new URL(PG_ADMIN_URL);
-  url.pathname = '/' + name;
-  return {
-    url: url.toString(),
-    async drop() {
-      const c = new Client({ connectionString: PG_ADMIN_URL });
-      await c.connect();
-      await c.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
-      await c.end();
-    },
-  };
-}
-
-async function startServer(env = {}) {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koinz-test-'));
-  fs.copyFileSync(GAMES, path.join(dataDir, 'games.json'));
-  const db = PG_ADMIN_URL ? await createTestDatabase() : null;
-  const proc = spawn(process.execPath, [path.join(ROOT, 'server.js')], {
-    cwd: ROOT,
-    env: { ...process.env, ...BASE_ENV, KOINZ_DATA_DIR: dataDir, ...(db ? { DATABASE_URL: db.url } : {}), ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  let log = '';
-  const base = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('server ไม่ start:\n' + log)), 10000);
-    const onData = (d) => {
-      log += d;
-      const m = log.match(/http:\/\/localhost:(\d+)/);
-      if (m) {
-        clearTimeout(timer);
-        resolve(`http://127.0.0.1:${m[1]}`);
-      }
-    };
-    proc.stdout.on('data', onData);
-    proc.stderr.on('data', (d) => (log += d));
-    proc.on('exit', (code) => reject(new Error(`server ปิดตัว (code ${code}):\n${log}`)));
-  });
-
-  async function req(method, url, body, headers = {}) {
-    const res = await fetch(base + url, {
-      method,
-      headers: { 'content-type': 'application/json', ...headers },
-      body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
-    });
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch { /* ไม่ใช่ JSON */ }
-    return { status: res.status, headers: res.headers, text, body: json };
-  }
-
-  // อ่านข้อมูลที่เซิร์ฟเวอร์บันทึก (รูปแบบเดียวกันทั้งไฟล์ JSON และ PostgreSQL)
-  let pgRepo = null;
-  async function readData(name) {
-    if (!db) {
-      try { return JSON.parse(fs.readFileSync(path.join(dataDir, `${name}.json`), 'utf8')); } catch { return null; }
-    }
-    pgRepo = pgRepo || require('../src/repo/pg').createPgRepo(db.url);
-    const fn = { orders: 'listAllOrders', jobs: 'listJobs', audit: 'listAudit', games: 'listGames' }[name];
-    return pgRepo[fn]();
-  }
-
-  async function stop() {
-    if (proc.exitCode === null) {
-      proc.kill();
-      await new Promise((r) => proc.once('exit', r));
-    }
-    fs.rmSync(dataDir, { recursive: true, force: true });
-    if (pgRepo) await pgRepo.close();
-    if (db) await db.drop();
-  }
-
-  return { base, req, readData, stop, dataDir };
-}
-
-// เปิด Express ปลอม (supplier / lookup / alert) → { url, close }
-function fakeServer(setup) {
-  const app = express();
-  app.use(express.json());
-  setup(app);
-  return new Promise((resolve) => {
-    const s = app.listen(0, '127.0.0.1', () =>
-      resolve({ url: `http://127.0.0.1:${s.address().port}`, close: () => new Promise((r) => s.close(r)) })
-    );
-  });
-}
-
-async function waitFor(fn, ms = 5000, step = 100) {
-  const end = Date.now() + ms;
-  for (;;) {
-    const v = await fn();
-    if (v) return v;
-    if (Date.now() > end) return v;
-    await sleep(step);
-  }
-}
-
-const mlOrder = (extra = {}) => ({
-  gameSlug: 'mobile-legends',
-  packageId: 'mobile-legends-3',
-  playerInputs: { uid: '123456789', zone: '1234' },
-  ...extra,
-});
+const {
+  ROOT, ADMIN_PASSWORD, BASE_ENV, startServer, fakeServer, waitFor, mlOrder,
+} = require('./helpers');
 
 // ---------------------------------------------------------------------------
 describe('Phase 1 — แคตตาล็อก ออเดอร์ หมดอายุ กันสั่งซ้ำ', () => {
@@ -233,6 +96,7 @@ describe('Phase 1 — แคตตาล็อก ออเดอร์ หม�
     assert.equal(c.body.lookupEnabled, false);
     assert.equal(c.body.orderTtlMinutes, 15);
     assert.ok('shopLineUrl' in c.body && 'autoFulfill' in c.body);
+    assert.equal(c.body.siteBanner, '');
     const r = await s.req('POST', '/api/player/lookup', { gameSlug: 'rov', playerInputs: { uid: '1234567' } });
     assert.equal(r.status, 404);
   });
@@ -295,6 +159,21 @@ describe('Phase 1 — ออเดอร์หมดอายุ (ORDER_TTL_MINU
     const saved = (await s.readData('orders')).find((x) => x.id === id);
     assert.equal(saved.lineId, 'koinzfan');
     assert.equal(saved.customerNote, 'โอนแล้ว 18:30');
+  });
+});
+
+describe('Staging — แถบเว็บทดสอบ', () => {
+  test('SITE_BANNER ตั้งค่า → /api/config ส่งข้อความ และ common.js แสดงแถบด้วย textContent', async () => {
+    const s = await startServer({ SITE_BANNER: 'เว็บทดสอบ — ห้ามโอนเงินจริง' });
+    try {
+      assert.equal((await s.req('GET', '/api/config')).body.siteBanner, 'เว็บทดสอบ — ห้ามโอนเงินจริง');
+    } finally {
+      await s.stop();
+    }
+    const js = fs.readFileSync(path.join(ROOT, 'public/js/common.js'), 'utf8');
+    assert.match(js, /bar\.textContent = c\.siteBanner/);
+    const css = fs.readFileSync(path.join(ROOT, 'public/css/style.css'), 'utf8');
+    assert.match(css, /\.site-banner \{[^}]*var\(--banner-bg\)/);
   });
 });
 
@@ -738,7 +617,8 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
   const pages = fs.readdirSync(PUBLIC).filter((f) => f.endsWith('.html'));
 
   test('ไม่มี path แบบ absolute ใน public/ (รันใต้ /Project-Koinz/ ได้)', () => {
-    for (const page of pages) {
+    const scripts = fs.readdirSync(path.join(PUBLIC, 'js')).map((f) => `js/${f}`);
+    for (const page of [...pages, ...scripts]) {
       const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8');
       const bad = html.match(/(?:href|src)="\/(?!\/)[^"]*"|location\.href\s*=\s*[`'"]\//g);
       assert.equal(bad, null, `${page}: ${bad}`);
@@ -753,11 +633,11 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
       assert.equal(index.status, 200);
       for (const page of pages) {
         const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8');
-        const refs = [...html.matchAll(/(?:href|src)="([^"]+)"/g)]
+        const refs = [...html.matchAll(/\s(?:href|src)="([^"]+)"/g)] // \s กัน data-shop-href="lineUrl"
           .map((m) => m[1])
           .filter((u) => !/^(https?:|\/\/|#|data:|mailto:|\$\{)/.test(u) && !u.includes('${'));
-        // game.html เป็นแค่หน้า redirect ไปหน้าแรก (?game=) ไม่มี CSS/JS ของตัวเอง
-        const isRedirect = /location\.replace\(/.test(html);
+        // game.html / register.html เป็นแค่หน้า redirect ไม่มี CSS/JS ของตัวเอง
+        const isRedirect = /js\/[a-z-]+-redirect\.js/.test(html);
         if (!isRedirect) {
           assert.ok(refs.includes('css/style.css') && refs.includes('js/config.js') && refs.includes('js/common.js'), page);
         }
@@ -770,7 +650,7 @@ describe('Phase 4 — GitHub Pages และเอกสาร', () => {
       // config.js ต้องโหลดก่อน common.js
       for (const page of pages) {
         const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8');
-        if (/location\.replace\(/.test(html)) continue;
+        if (/js\/[a-z-]+-redirect\.js/.test(html)) continue;
         assert.ok(html.indexOf('js/config.js') < html.indexOf('js/common.js'), page);
         assert.match(html, /family=Anuphan/, `${page} ต้องใช้ฟอนต์ Anuphan`);
       }

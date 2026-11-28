@@ -2,7 +2,7 @@ const config = require('./src/config');
 
 const problems = config.startupProblems();
 if (problems.length) {
-  console.error('❌ ไม่สามารถเริ่มเซิร์ฟเวอร์บน production ได้:');
+  console.error('❌ ไม่สามารถเริ่มเซิร์ฟเวอร์ได้ (แก้ค่าตั้งค่าต่อไปนี้ก่อน):');
   problems.forEach((p) => console.error('   - ' + p));
   process.exit(1);
 }
@@ -24,6 +24,7 @@ async function main() {
       `⚙️  ข้อมูล: ${repo.kind === 'pg' ? 'PostgreSQL' : `ไฟล์ JSON (${config.dataDir})`} · webhook ชำระเงิน: ${config.webhookEnabled ? 'เปิด' : 'ปิด'} · เติมอัตโนมัติ: ${config.autoFulfill ? 'เปิด' : 'ปิด (แอดมินเติมเอง)'} · ตรวจชื่อ: ${config.lookupEnabled ? (config.lookupMock && !config.lookupApiUrl ? 'จำลอง' : 'เปิด') : 'ปิด'}`
     );
     if (!config.adminPasswordSet) console.log('⚠️  ยังไม่ได้ตั้ง ADMIN_PASSWORD ในไฟล์ .env (ใช้ค่าเริ่มต้น admin1234)');
+    if (!config.sessionSecretSet) console.log('⚠️  ยังไม่ได้ตั้ง SESSION_SECRET (สุ่มใหม่ทุกครั้งที่ start — production ต้องตั้ง)');
     jobs.start().catch((e) => console.error('เริ่มงานเบื้องหลังไม่สำเร็จ:', e));
   });
 

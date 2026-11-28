@@ -3,85 +3,21 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#F2F3EF">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
   <title>เข้าสู่ระบบ — Koinz</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="css/style.css">
 </head>
-<body class="auth-page">
-  <main class="auth-shell">
-    <section class="auth-form-side" aria-labelledby="auth-title">
-      <a class="logo auth-logo" href="./"><span data-shop>Koinz</span></a>
-      <div class="auth-content">
-        <p class="auth-eyebrow">เติมเกมได้ง่ายในที่เดียว</p>
-        <h1 id="auth-title">ยินดีต้อนรับกลับ</h1>
-        <p class="auth-intro" id="auth-intro">เข้าสู่ระบบเพื่อจัดการบัญชี Koinz ของคุณ</p>
-        <div class="auth-tabs" role="tablist" aria-label="เลือกเข้าสู่ระบบหรือสมัครสมาชิก">
-          <button type="button" class="auth-tab is-active" role="tab" aria-selected="true" data-mode="login">เข้าสู่ระบบ</button>
-          <button type="button" class="auth-tab" role="tab" aria-selected="false" data-mode="register">สมัครสมาชิก</button>
-        </div>
-        <form id="auth-form" class="auth-form" novalidate>
-          <label id="name-label" hidden for="name">ชื่อที่ใช้แสดง</label>
-          <input id="name" name="name" type="text" autocomplete="name" placeholder="ชื่อที่ใช้แสดง" minlength="2" maxlength="80" hidden>
-          <label for="email">อีเมล</label>
-          <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254" required>
-          <label for="password">รหัสผ่าน</label>
-          <div class="auth-password"><input id="password" name="password" type="password" autocomplete="current-password" placeholder="กรอกรหัสผ่าน" minlength="8" maxlength="128" required><button type="button" id="toggle-password" aria-label="แสดงรหัสผ่าน">แสดง</button></div>
-          <p class="auth-help" id="password-help">ใช้รหัสผ่านอย่างน้อย 8 ตัวอักษร</p>
-          <button class="btn btn-red auth-submit" type="submit" id="submit-button">เข้าสู่ระบบ</button>
-          <p class="auth-message" id="message" role="status" aria-live="polite"></p>
-        </form>
-        <a class="auth-back" href="./">← กลับไปเลือกเกม</a>
-      </div>
-      <p class="auth-foot">เติมเกมสะดวก จ่ายผ่าน QR PromptPay</p>
-    </section>
-    <aside class="auth-art" aria-label="เติมเกมโปรดของคุณได้ในไม่กี่ขั้นตอน">
-      <div class="auth-art-copy"><span class="auth-mark" aria-hidden="true">K</span><p class="auth-art-kicker">KOINZ GAME TOP-UP</p><h2>เติมเกมโปรด<br>ให้สนุกได้ต่อเนื่อง</h2><p>เลือกแพ็กเกจ จ่ายผ่าน QR แล้วติดตามสถานะได้ในที่เดียว</p></div>
-      <div class="auth-coins" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><b></b></div>
-    </aside>
-  </main>
+<body data-page="login">
+  <div class="wrap auth-wrap" id="app"><p class="empty loading">กำลังโหลด…</p></div>
+  <noscript><p class="wrap">หน้านี้ต้องเปิด JavaScript</p></noscript>
+
   <script src="js/config.js"></script>
   <script src="js/common.js"></script>
-  <script>
-    const form = $('#auth-form'), tabs = [...document.querySelectorAll('.auth-tab')];
-    let mode = location.pathname.endsWith('/register.html') || new URLSearchParams(location.search).get('mode') === 'register' ? 'register' : 'login';
-    function setMode(next) {
-      mode = next;
-      const registering = mode === 'register';
-      $('#name').hidden = !registering; $('#name-label').hidden = !registering;
-      $('#name').required = registering;
-      $('#password').autocomplete = registering ? 'new-password' : 'current-password';
-      $('#password-help').textContent = registering ? 'ใช้รหัสผ่านอย่างน้อย 8 ตัวอักษร' : 'กรอกรหัสผ่านของคุณ';
-      $('#auth-title').textContent = registering ? 'สร้างบัญชีของคุณ' : 'ยินดีต้อนรับกลับ';
-      $('#auth-intro').textContent = registering ? 'สมัครสมาชิกเพื่อเริ่มต้นใช้งาน Koinz' : 'เข้าสู่ระบบเพื่อจัดการบัญชี Koinz ของคุณ';
-      $('#submit-button').textContent = registering ? 'สมัครสมาชิก' : 'เข้าสู่ระบบ';
-      $('#message').textContent = '';
-      tabs.forEach((tab) => { const active = tab.dataset.mode === mode; tab.classList.toggle('is-active', active); tab.setAttribute('aria-selected', String(active)); });
-    }
-    tabs.forEach((tab) => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
-    setMode(mode);
-    $('#toggle-password').addEventListener('click', (e) => { const show = $('#password').type === 'password'; $('#password').type = show ? 'text' : 'password'; e.currentTarget.textContent = show ? 'ซ่อน' : 'แสดง'; e.currentTarget.setAttribute('aria-label', show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'); });
-    const oldToken = sessionStorage.getItem('koinz_customer');
-    if (oldToken) fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + oldToken } }).then(r => { if (r.ok) location.replace('./'); else sessionStorage.removeItem('koinz_customer'); }).catch(() => {});
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const button = $('#submit-button'), message = $('#message');
-      if (!form.reportValidity()) return;
-      button.disabled = true; message.className = 'auth-message'; message.textContent = 'กำลังดำเนินการ…';
-      try {
-        const body = { email: $('#email').value.trim(), password: $('#password').value };
-        if (mode === 'register') body.name = $('#name').value.trim();
-        const response = await fetch('/api/auth/' + mode, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด กรุณาลองอีกครั้ง');
-        sessionStorage.setItem('koinz_customer', data.token);
-        sessionStorage.setItem('koinz_customer_name', data.user.name);
-        location.replace('./');
-      } catch (error) { message.className = 'auth-message is-error'; message.textContent = error.message || 'เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่'; }
-      finally { button.disabled = false; }
-    });
-  </script>
+  <script src="js/pile.js"></script>
+  <script src="js/auth.js"></script>
 </body>
 </html>

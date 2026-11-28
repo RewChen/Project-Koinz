@@ -92,7 +92,7 @@ async function tick() {
     // งานคนละออเดอร์รันพร้อมกันได้ (จองแล้ว ไม่ถูกหยิบซ้ำ)
     for (const job of jobs) {
       runFulfill(job)
-        .catch((e) => console.error(`งานเติมเกม ${job.id} ผิดพลาด:`, e))
+        .catch((e) => console.error(`งานเติมเกม ${job.id} ผิดพลาด:`, e && e.stack ? e.stack : String(e)))
         .finally(() => setImmediate(tick));
     }
   } catch (e) {
@@ -107,6 +107,13 @@ async function cleanup() {
     await repo.cleanupJobs(Date.now() - KEEP_DONE_MS);
   } catch (e) {
     console.error('ล้างงานเก่าไม่สำเร็จ:', e.message);
+  }
+  // session ที่หมดอายุ และลิงก์ตั้งรหัสใหม่ที่ใช้แล้ว/หมดอายุ
+  try {
+    await require('./auth/session').cleanup();
+    await require('./auth/members').cleanup();
+  } catch (e) {
+    console.error('ล้าง session เก่าไม่สำเร็จ:', e.message);
   }
 }
 

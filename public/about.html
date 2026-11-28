@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>เกี่ยวกับร้านและติดต่อ — Koinz</title>
+  <meta name="description" content="ร้านเติมเกมด้วย UID ไม่ขอรหัสผ่านบัญชีเกม จ่ายผ่าน QR PromptPay และดูสถานะได้ทุกขั้นจากลิงก์ออเดอร์">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- ข้อมูลร้าน (LINE, Facebook, เวลา, ผู้ประกอบการ, ตัวเลขเวลา) มาจาก env ผ่าน /api/config → fillShopInfo() ห้าม hardcode ที่นี่ -->
+  <div class="wrap">
+    <header class="top">
+      <a class="logo" href="./"><span data-shop>Koinz</span></a>
+      <nav class="navlinks" aria-label="เมนูหลัก">
+        <a href="./">เติมเกม</a>
+      </nav>
+    </header>
+
+    <main class="info-page">
+      <section class="info-hero">
+        <h1>ร้านเติมเกม<br>ที่บอกสถานะทุกขั้น</h1>
+        <p><span data-shop>Koinz</span> เติมเงินในเกมด้วย UID ของคุณ ไม่ขอรหัสผ่านบัญชีเกม จ่ายผ่าน QR PromptPay แล้วดูสถานะได้จากลิงก์ออเดอร์จนเติมเสร็จ</p>
+      </section>
+
+      <section class="steps-card" aria-label="ขั้นตอนการเติม">
+        <ol>
+          <li><span class="step-num" aria-hidden="true">1</span><span><b>เลือกเกมและแพ็กเกจ</b>กรอก UID ของคุณ ไม่ต้องให้รหัสผ่าน</span></li>
+          <li><span class="step-num" aria-hidden="true">2</span><span><b>สแกนจ่าย QR PromptPay</b>ใช้แอปธนาคารไหนก็ได้ ตรวจยอดก่อนโอน</span></li>
+          <li><span class="step-num" aria-hidden="true">3</span><span><b>ร้านตรวจยอดและเติมให้</b>ดูสถานะได้จากลิงก์ออเดอร์จนเติมเสร็จ</span></li>
+        </ol>
+      </section>
+
+      <section class="info-section" aria-labelledby="contact">
+        <h2 id="contact">ติดต่อร้าน</h2>
+        <div class="contact-list">
+          <a class="contact-card" data-shop-row="lineUrl" data-shop-href="lineUrl" target="_blank" rel="noopener" hidden>
+            <span class="contact-ico" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg></span>
+            <span class="contact-text"><b>LINE</b><span><span data-shop-row="lineId" hidden><span data-shop-field="lineId"></span> · </span>ตอบเร็วที่สุด</span></span>
+            <span class="contact-chev" aria-hidden="true">›</span>
+          </a>
+          <a class="contact-card" data-shop-row="facebookUrl" data-shop-href="facebookUrl" target="_blank" rel="noopener" hidden>
+            <span class="contact-ico" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M13 20v-7h3M13 13v-2a2 2 0 0 1 2-2h1"/></svg></span>
+            <span class="contact-text"><b>เพจ Facebook</b><span data-shop-row="facebookName" data-shop-field="facebookName" hidden></span></span>
+            <span class="contact-chev" aria-hidden="true">›</span>
+          </a>
+          <div class="contact-card contact-note" data-shop-row="hours" hidden>
+            <span class="contact-ico" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg></span>
+            <span class="contact-text"><b>เวลาตอบแชท</b><span><span data-shop-field="hours"></span> · นอกเวลานี้ร้านเติมให้เมื่อกลับมาตอบ</span></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="info-section" aria-labelledby="faq">
+        <h2 id="faq">คำถามที่พบบ่อย</h2>
+        <div class="faq">
+          <details open>
+            <summary>ปกติเติมเข้าเกมนานแค่ไหน</summary>
+            <p>ในเวลาตอบแชท ร้านเติมให้ภายใน <span data-shop-field="fulfillTargetMinutes">15</span> นาทีหลังยอดเข้า ดูสถานะได้จากลิงก์ออเดอร์ตลอด</p>
+          </details>
+          <details>
+            <summary>ต้องให้รหัสผ่านบัญชีเกมไหม</summary>
+            <p>ไม่ต้อง ร้านใช้แค่ UID และ Zone หรือเซิร์ฟเวอร์ ถ้ามีใครขอรหัสผ่านโดยอ้างว่าเป็น <span data-shop>Koinz</span> อย่าให้เด็ดขาด</p>
+          </details>
+          <details>
+            <summary>กรอก UID ผิดทำอย่างไร</summary>
+            <p>ถ้ายังไม่โอน กดย้อนกลับไปแก้ได้เลย ถ้าโอนแล้วแต่ยังไม่เติม ทัก LINE ร้านทันที ถ้าเติมไปแล้วร้านอาจเรียกคืนให้ไม่ได้</p>
+          </details>
+          <details>
+            <summary>เติมไม่เข้าได้เงินคืนไหม</summary>
+            <p>ได้ ร้านคืนเงินเต็มจำนวนไปที่บัญชีที่ใช้โอน ดูรายละเอียดใน<a href="refund.html">นโยบายคืนเงิน</a></p>
+          </details>
+          <details>
+            <summary>ต้องสมัครสมาชิกไหม</summary>
+            <p>ไม่ต้อง สมัครแล้วได้ประวัติออเดอร์และ UID ที่บันทึกไว้ทุกเครื่อง แต่ไม่สมัครก็สั่งได้เหมือนกัน</p>
+          </details>
+        </div>
+      </section>
+
+      <p class="legal-line">
+        <span data-shop-row="legalName" hidden>ผู้ประกอบการ: <span data-shop-field="legalName"></span></span>
+        <span data-shop-row="dbdId" hidden>เลขทะเบียนพาณิชย์อิเล็กทรอนิกส์ <span data-shop-field="dbdId"></span></span>
+      </p>
+    </main>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/common.js"></script>
+</body>
+</html>

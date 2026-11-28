@@ -61,6 +61,7 @@ function rowToOrder(r) {
     history: (r.history || []).map(rowToHistory),
   };
   if (r.paid_at) o.paidAt = iso(r.paid_at);
+  if (r.user_id) o.userId = r.user_id; // เฉพาะออเดอร์ของสมาชิก (guest ไม่มี key นี้ เหมือนไฟล์ JSON)
   return o;
 }
 
@@ -90,6 +91,45 @@ function rowToJob(j) {
   if (j.finished_at) o.finishedAt = iso(j.finished_at);
   if (j.supplier_ref != null) o.supplierRef = j.supplier_ref;
   return o;
+}
+
+function rowToUser(u) {
+  return {
+    id: u.id,
+    email: u.email,
+    passwordHash: u.password_hash,
+    termsVersion: u.terms_version,
+    termsAcceptedAt: iso(u.terms_accepted_at),
+    marketingOptIn: u.marketing_opt_in,
+    failedLogins: u.failed_logins,
+    failedWindowStartedAt: iso(u.failed_window_started_at),
+    lockedUntil: iso(u.locked_until),
+    createdAt: iso(u.created_at),
+    updatedAt: iso(u.updated_at),
+    deletedAt: iso(u.deleted_at),
+  };
+}
+
+function rowToSession(s) {
+  return {
+    id: s.id,
+    userId: s.user_id,
+    createdAt: iso(s.created_at),
+    lastSeenAt: iso(s.last_seen_at),
+    expiresAt: iso(s.expires_at),
+    userAgent: s.user_agent,
+    ipHash: s.ip_hash,
+  };
+}
+
+function rowToReset(r) {
+  return {
+    tokenHash: r.token_hash,
+    userId: r.user_id,
+    createdAt: iso(r.created_at),
+    expiresAt: iso(r.expires_at),
+    usedAt: iso(r.used_at),
+  };
 }
 
 // ฟิลด์ของออเดอร์ที่แก้ผ่าน transition ได้ → ชื่อคอลัมน์
@@ -223,15 +263,15 @@ function createPgRepo(connectionString) {
         const r = await c.query(
           `INSERT INTO orders (id, token, status, game_slug, game_name, package_id, package_name, sku, player_inputs,
              player_label, player_nickname, contact, line_id, customer_note, amount, expires_at, paid_at, payment_ref,
-             supplier_ref, idempotency_key, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+             supplier_ref, idempotency_key, created_at, updated_at, user_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
            ON CONFLICT (idempotency_key) DO NOTHING
            RETURNING id`,
           [order.id, order.token, order.status, order.gameSlug, order.gameName, order.packageId, order.packageName,
             order.sku ?? null, JSON.stringify(order.playerInputs || {}), order.playerLabel || '', order.playerNickname ?? null,
             order.contact || '', order.lineId || '', order.customerNote || '', order.amount, order.expiresAt ?? null,
             order.paidAt ?? null, order.paymentRef ?? null, order.supplierRef ?? null, order.idempotencyKey ?? null,
-            order.createdAt, order.updatedAt]
+            order.createdAt, order.updatedAt, order.userId ?? null]
         );
         if (!r.rows.length) {
           return { order: await getOrderWith(c, 'o.idempotency_key = $1', [order.idempotencyKey]), created: false };
@@ -360,6 +400,171 @@ function createPgRepo(connectionString) {
         WHERE o.status = 'paid'
           AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.order_id = o.id AND NOT j.done)`);
       return r.rows.map((x) => x.id);
+    },
+
+    // ---------- สมาชิก ----------
+    async createUser(u) {
+      const r = await pool.query(
+        `INSERT INTO users (id, email, password_hash, terms_version, terms_accepted_at, marketing_opt_in, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (email) DO NOTHING
+         RETURNING *`,
+        [u.id, u.email, u.passwordHash, u.termsVersion, u.termsAcceptedAt, !!u.marketingOptIn, u.createdAt, u.updatedAt]
+      );
+      return r.rows.length ? { user: rowToUser(r.rows[0]), created: true } : { user: null, created: false };
+    },
+    async findUserByEmail(email) {
+      const r = await pool.query('SELECT * FROM users WHERE email = $1 AND deleted_at IS NULL', [email]);
+      return r.rows[0] ? rowToUser(r.rows[0]) : null;
+    },
+    async getUser(id) {
+      const r = await pool.query('SELECT * FROM users WHERE id = $1 AND deleted_at IS NULL', [id]);
+      return r.rows[0] ? rowToUser(r.rows[0]) : null;
+    },
+    async recordLoginFailure(id, { now, windowStart, max, lockUntil }) {
+      return tx(async (c) => {
+        const r = await c.query(
+          `UPDATE users SET
+             failed_logins = CASE WHEN failed_window_started_at IS NULL OR failed_window_started_at <= $2::timestamptz
+                                  THEN 1 ELSE failed_logins + 1 END,
+             failed_window_started_at = CASE WHEN failed_window_started_at IS NULL OR failed_window_started_at <= $2::timestamptz
+                                             THEN $1::timestamptz ELSE failed_window_started_at END,
+             updated_at = $1::timestamptz
+           WHERE id = $3 AND deleted_at IS NULL
+           RETURNING failed_logins, locked_until`,
+          [now, windowStart, id]
+        );
+        if (!r.rows.length) return { locked: false, lockedUntil: null };
+        if (r.rows[0].failed_logins < max) return { locked: false, lockedUntil: iso(r.rows[0].locked_until) };
+        await c.query(
+          'UPDATE users SET locked_until = $2, failed_logins = 0, failed_window_started_at = NULL WHERE id = $1',
+          [id, lockUntil]
+        );
+        return { locked: true, lockedUntil: iso(lockUntil) };
+      });
+    },
+    async recordLoginSuccess(id, { now, passwordHash = null }) {
+      await pool.query(
+        `UPDATE users SET failed_logins = 0, failed_window_started_at = NULL, locked_until = NULL, updated_at = $2,
+           password_hash = COALESCE($3, password_hash)
+         WHERE id = $1`,
+        [id, now, passwordHash]
+      );
+    },
+
+    // ---------- session (id = sha256 ของ token) ----------
+    async createSession(s) {
+      await pool.query(
+        `INSERT INTO sessions (id, user_id, created_at, last_seen_at, expires_at, user_agent, ip_hash)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [s.id, s.userId, s.createdAt, s.lastSeenAt, s.expiresAt, s.userAgent ?? null, s.ipHash ?? null]
+      );
+    },
+    async getSession(id) {
+      const r = await pool.query('SELECT * FROM sessions WHERE id = $1', [id]);
+      return r.rows[0] ? rowToSession(r.rows[0]) : null;
+    },
+    async touchSession(id, now) {
+      await pool.query('UPDATE sessions SET last_seen_at = $2 WHERE id = $1', [id, now]);
+    },
+    async deleteSession(id) {
+      await pool.query('DELETE FROM sessions WHERE id = $1', [id]);
+    },
+    async deleteUserSessions(userId, exceptId = null) {
+      const r = await pool.query('DELETE FROM sessions WHERE user_id = $1 AND id IS DISTINCT FROM $2', [userId, exceptId]);
+      return r.rowCount;
+    },
+    async countActiveSessions(userId, { now, idleCutoff }) {
+      const r = await pool.query(
+        'SELECT count(*)::int AS n FROM sessions WHERE user_id = $1 AND expires_at > $2 AND last_seen_at > $3',
+        [userId, now, idleCutoff]
+      );
+      return r.rows[0].n;
+    },
+    async deleteStaleSessions({ now, idleCutoff }) {
+      await pool.query('DELETE FROM sessions WHERE expires_at <= $1 OR last_seen_at <= $2', [now, idleCutoff]);
+    },
+
+    // ---------- ลิงก์ตั้งรหัสผ่านใหม่ (token_hash = sha256 ของ token) ----------
+    async createPasswordReset(r) {
+      await pool.query(
+        'INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4)',
+        [r.tokenHash, r.userId, r.createdAt, r.expiresAt]
+      );
+    },
+    async getPasswordReset(tokenHash) {
+      const r = await pool.query('SELECT * FROM password_resets WHERE token_hash = $1', [tokenHash]);
+      return r.rows[0] ? rowToReset(r.rows[0]) : null;
+    },
+    async deleteStalePasswordResets(now) {
+      await pool.query('DELETE FROM password_resets WHERE used_at IS NOT NULL OR expires_at <= $1', [now]);
+    },
+    async consumePasswordReset(tokenHash, now) {
+      const r = await pool.query(
+        `UPDATE password_resets SET used_at = $2
+         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2
+         RETURNING *`,
+        [tokenHash, now]
+      );
+      return r.rows[0] ? rowToReset(r.rows[0]) : null;
+    },
+    async deleteUserPasswordResets(userId) {
+      await pool.query('DELETE FROM password_resets WHERE user_id = $1', [userId]);
+    },
+    async updateUserPassword(id, { now, passwordHash }) {
+      await pool.query(
+        `UPDATE users SET password_hash = $2, failed_logins = 0, failed_window_started_at = NULL, locked_until = NULL,
+           updated_at = $3
+         WHERE id = $1 AND deleted_at IS NULL`,
+        [id, passwordHash, now]
+      );
+    },
+    async deleteUserAccount(id, now) {
+      await tx(async (c) => {
+        await c.query('DELETE FROM sessions WHERE user_id = $1', [id]);
+        await c.query('DELETE FROM saved_players WHERE user_id = $1', [id]);
+        await c.query('DELETE FROM password_resets WHERE user_id = $1', [id]);
+        await c.query('UPDATE orders SET user_id = NULL WHERE user_id = $1', [id]);
+        await c.query(
+          `UPDATE users SET email = $2, password_hash = '!', marketing_opt_in = false, failed_logins = 0,
+             failed_window_started_at = NULL, locked_until = NULL, updated_at = $3, deleted_at = $3
+           WHERE id = $1`,
+          [id, `deleted-${id}@invalid`, now]
+        );
+      });
+    },
+
+    // ---------- UID ที่สมาชิกบันทึกไว้ (1 แถวต่อเกม) ----------
+    async upsertSavedPlayer(p) {
+      await pool.query(
+        `INSERT INTO saved_players (user_id, game_slug, inputs, label, updated_at) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (user_id, game_slug) DO UPDATE SET inputs = EXCLUDED.inputs, label = EXCLUDED.label,
+           updated_at = EXCLUDED.updated_at`,
+        [p.userId, p.gameSlug, JSON.stringify(p.inputs || {}), p.label || '', p.updatedAt]
+      );
+    },
+    async listSavedPlayers(userId) {
+      const r = await pool.query('SELECT * FROM saved_players WHERE user_id = $1 ORDER BY updated_at DESC', [userId]);
+      return r.rows.map((x) => ({
+        userId: x.user_id, gameSlug: x.game_slug, inputs: x.inputs || {}, label: x.label, updatedAt: iso(x.updated_at),
+      }));
+    },
+    async deleteSavedPlayer(userId, gameSlug) {
+      const r = await pool.query('DELETE FROM saved_players WHERE user_id = $1 AND game_slug = $2', [userId, gameSlug]);
+      return r.rowCount > 0;
+    },
+
+    // ---------- ออเดอร์ของสมาชิก ----------
+    async listOrdersByUser(userId, limit = 50) {
+      const r = await pool.query(
+        `${ORDER_SELECT} WHERE o.user_id = $1 ORDER BY o.created_at DESC, o.id DESC LIMIT $2`,
+        [userId, limit]
+      );
+      return r.rows.map(rowToOrder);
+    },
+    async claimOrder(id, userId) {
+      const r = await pool.query('UPDATE orders SET user_id = $2 WHERE id = $1 AND user_id IS NULL', [id, userId]);
+      return r.rowCount > 0;
     },
   };
 }

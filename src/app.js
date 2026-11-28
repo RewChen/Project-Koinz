@@ -9,12 +9,9 @@ const orders = require('./orders');
 const adapters = require('./adapters');
 const security = require('./security');
 const jobs = require('./jobs');
+const authRoutes = require('./auth/routes');
+const session = require('./auth/session');
 const { promptPayPayload } = require('./promptpay');
-const store = require('./store');
-const AUTH_SESSION_MS = 30 * 24 * 60 * 60 * 1000;
-const customerSessions = new Map();
-const passwordHash = (password, salt) => crypto.scryptSync(password, salt, 64).toString('hex');
-const customerView = (u) => ({ id: u.id, name: u.name, email: u.email });
 
 const fail = (res, code, error) => res.status(code).json({ error });
 const baht = (n) => '฿' + Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 });
@@ -46,47 +43,6 @@ function createApp() {
   app.use(express.json({ limit: '200kb', verify: (req, _res, buf) => { req.rawBody = buf; } }));
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
-  // ---------- customer authentication ----------
-  app.post('/api/auth/register', security.limits.register, wrap(async (req, res) => {
-    const name = text(req.body && req.body.name, 80);
-    const email = text(req.body && req.body.email, 254).toLowerCase();
-    const password = String((req.body && req.body.password) || '');
-    if (name.length < 2) return fail(res, 400, 'กรุณากรอกชื่ออย่างน้อย 2 ตัวอักษร');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(res, 400, 'รูปแบบอีเมลไม่ถูกต้อง');
-    if (password.length < 8 || password.length > 128) return fail(res, 400, 'รหัสผ่านต้องมี 8–128 ตัวอักษร');
-    const users = store.read('users', []);
-    if (users.some((u) => u.email === email)) return fail(res, 409, 'อีเมลนี้มีบัญชีแล้ว กรุณาเข้าสู่ระบบ');
-    const salt = crypto.randomBytes(16).toString('hex');
-    const user = { id: crypto.randomUUID(), name, email, salt, passwordHash: passwordHash(password, salt), createdAt: new Date().toISOString() };
-    users.push(user); store.write('users', users);
-    const token = crypto.randomBytes(32).toString('hex');
-    customerSessions.set(token, { id: user.id, expires: Date.now() + AUTH_SESSION_MS });
-    res.status(201).json({ token, user: customerView(user) });
-  }));
-  app.post('/api/auth/login', security.limits.login, (req, res) => {
-    const email = text(req.body && req.body.email, 254).toLowerCase();
-    const password = String((req.body && req.body.password) || '');
-    if (password.length > 128) return fail(res, 400, 'รหัสผ่านต้องมีไม่เกิน 128 ตัวอักษร');
-    const user = store.read('users', []).find((u) => u.email === email);
-    const candidate = passwordHash(password, user ? user.salt : 'koinz-auth-fallback-salt');
-    if (!user || !safeEqual(candidate, user.passwordHash)) return fail(res, 401, 'อีเมลหรือรหัสผ่านไม่ถูกต้อง');
-    const token = crypto.randomBytes(32).toString('hex');
-    customerSessions.set(token, { id: user.id, expires: Date.now() + AUTH_SESSION_MS });
-    res.json({ token, user: customerView(user) });
-  });
-  app.get('/api/auth/me', (req, res) => {
-    const token = (req.headers.authorization || '').replace(/^Bearer /, '');
-    const session = customerSessions.get(token);
-    if (!session || session.expires <= Date.now()) { customerSessions.delete(token); return fail(res, 401, 'กรุณาเข้าสู่ระบบอีกครั้ง'); }
-    const user = store.read('users', []).find((u) => u.id === session.id);
-    if (!user) return fail(res, 401, 'กรุณาเข้าสู่ระบบอีกครั้ง');
-    res.json({ user: customerView(user) });
-  });
-  app.post('/api/auth/logout', (req, res) => {
-    customerSessions.delete((req.headers.authorization || '').replace(/^Bearer /, ''));
-    res.json({ ok: true });
-  });
-
   // ---------- public API ----------
   app.get('/api/config', (req, res) => {
     res.json({
@@ -96,6 +52,24 @@ function createApp() {
       lookupEnabled: adapters.lookupEnabled(),
       autoFulfill: config.autoFulfill,
       orderTtlMinutes: config.orderTtlMinutes,
+      siteBanner: config.siteBanner,
+      passwordResetEnabled: config.passwordResetEnabled,
+      lineLoginEnabled: config.lineLoginEnabled,
+      // ข้อมูลร้านที่หน้าเว็บเติมด้วย fillShopInfo() — มีแต่ข้อมูลเปิดเผย (มีเทสเช็คว่าไม่มีความลับหลุด)
+      shop: {
+        name: config.shopName,
+        lineId: config.shopLineId,
+        lineUrl: config.shopLineUrl,
+        facebookUrl: config.shopFacebookUrl,
+        facebookName: config.shopFacebookName,
+        hours: config.shopHours,
+        legalName: config.shopLegalName,
+        dbdId: config.shopDbdId,
+        fulfillTargetMinutes: config.fulfillTargetMinutes,
+        refundHours: config.refundHours,
+        stuckOrderHours: config.stuckOrderHours,
+        termsVersion: config.termsVersion,
+      },
     });
   });
 
@@ -124,7 +98,8 @@ function createApp() {
     }
   }));
 
-  app.post('/api/orders', security.limits.createOrder, wrap(async (req, res) => {
+  // มี cookie สมาชิก → ผูกออเดอร์กับบัญชี + จำ UID (ไม่มีก็สั่งแบบ guest ได้เหมือนเดิม)
+  app.post('/api/orders', security.limits.createOrder, session.middleware, wrap(async (req, res) => {
     const body = req.body || {};
     const key = body.idempotencyKey;
     const hasKey = key !== undefined && key !== null && key !== '';
@@ -163,21 +138,30 @@ function createApp() {
       amount: pkg.price,
       expiresAt: new Date(Date.now() + config.orderTtlMinutes * 60000).toISOString(),
       idempotencyKey: hasKey ? key : null,
+      ...(req.member ? { userId: req.member.user.id } : {}),
     });
+    if (created) await authRoutes.rememberPlayer(req, game, inputs);
     res.status(created ? 201 : 200).json({ id: order.id, token: order.token });
   }));
 
+  // เปิดออเดอร์ได้ 2 ทาง: token ในลิงก์ (guest) หรือ session ของสมาชิกที่เป็นเจ้าของออเดอร์ (หน้าบัญชี)
   async function findOrderForCustomer(req, res) {
     const token = req.query.t || (req.body && req.body.t);
     const order = await orders.find(req.params.id);
-    if (!order || !token || !safeEqual(order.token, token)) {
+    const byToken = !!(order && token && safeEqual(order.token, token));
+    const byOwner = !!(order && !token && req.member && order.userId && order.userId === req.member.user.id);
+    if (!byToken && !byOwner) {
       fail(res, 404, 'ไม่พบออเดอร์ หรือลิงก์ไม่ถูกต้อง');
       return null;
     }
+    if (byOwner) res.set('Cache-Control', 'no-store');
     return order;
   }
 
-  app.get('/api/orders/:id', wrap(async (req, res) => {
+  // แจ้งโอนด้วย session (ไม่มี token) ต้องมาจากหน้าเว็บของร้านเท่านั้น (กัน CSRF) — แบบมี token ใช้ได้เหมือนเดิม
+  const ownerCsrf = (req, res, next) => ((req.body && req.body.t) ? next() : security.sameOriginOnly(req, res, next));
+
+  app.get('/api/orders/:id', session.middleware, wrap(async (req, res) => {
     const order = await findOrderForCustomer(req, res);
     if (!order) return;
     const data = orders.publicView(order);
@@ -194,7 +178,7 @@ function createApp() {
   }));
 
   // SSE: push สถานะทันทีที่เปลี่ยน (ไม่ poll ฐานข้อมูล)
-  app.get('/api/orders/:id/events', wrap(async (req, res) => {
+  app.get('/api/orders/:id/events', session.middleware, wrap(async (req, res) => {
     const order = await findOrderForCustomer(req, res);
     if (!order) return;
     res.writeHead(200, {
@@ -217,7 +201,7 @@ function createApp() {
     });
   }));
 
-  app.post('/api/orders/:id/notify', security.limits.notify, wrap(async (req, res) => {
+  app.post('/api/orders/:id/notify', security.limits.notify, ownerCsrf, session.middleware, wrap(async (req, res) => {
     const order = await findOrderForCustomer(req, res);
     if (!order) return;
     try {
@@ -281,6 +265,9 @@ function createApp() {
     }
     res.json({ received: true });
   }));
+
+  // ---------- สมาชิก (/api/auth/*, /api/me/*) ----------
+  authRoutes.mount(app);
 
   // ---------- admin API ----------
   const sessions = new Map(); // token -> expires
@@ -383,7 +370,9 @@ function createApp() {
   app.use((err, req, res, next) => {
     if (err.type === 'entity.parse.failed') return fail(res, 400, 'รูปแบบข้อมูลไม่ถูกต้อง');
     if (err.type === 'entity.too.large') return fail(res, 413, 'ข้อมูลมีขนาดใหญ่เกินไป');
-    console.error(err);
+    // log แค่ชนิด/ข้อความ/stack — ไม่พิมพ์ทั้ง object (error ของ PostgreSQL มี detail ที่อาจมีอีเมล/ข้อมูลลูกค้า)
+    // และใช้ req.path ไม่ใช่ originalUrl (query มี ?t=token ของออเดอร์)
+    console.error(`❌ ${req.method} ${req.path}: ${err && err.stack ? err.stack : String(err)}`);
     if (res.headersSent) return res.end();
     fail(res, 500, 'เกิดข้อผิดพลาดในระบบ ลองใหม่อีกครั้ง');
   });
