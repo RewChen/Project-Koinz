@@ -42,8 +42,19 @@ TRUST_PROXY=1
 SHOP_NAME=Koinz (ทดสอบ)
 PROMPTPAY_ID=<ใช้เบอร์/เลขบัตรจริงได้ แต่ห้ามโอนเงินจริงตอนทดสอบ>
 PROMPTPAY_NAME=<ชื่อบัญชี>
-SHOP_LINE_URL=
 ORDER_TTL_MINUTES=15
+
+# ข้อมูลร้าน (หน้าเกี่ยวกับร้าน / นโยบายคืนเงิน) — ลิงก์ต้องเป็น https://
+SHOP_LINE_ID=deworldr
+SHOP_LINE_URL=https://line.me/ti/p/~deworldr
+SHOP_FACEBOOK_URL=https://www.facebook.com/profile.php?id=61596943354373
+SHOP_FACEBOOK_NAME=
+SHOP_HOURS=09:00–22:00 น.
+SHOP_LEGAL_NAME=
+SHOP_DBD_ID=
+FULFILL_TARGET_MINUTES=15
+REFUND_HOURS=24
+STUCK_ORDER_HOURS=1
 
 PAYMENT_WEBHOOK_SECRET=
 SUPPLIER_API_URL=
