@@ -30,6 +30,7 @@ function rateLimit(name, max, windowMs = 60000) {
 
 const limits = {
   login: rateLimit('login', 5),
+  register: rateLimit('register', 5),
   createOrder: rateLimit('order', 20),
   lookup: rateLimit('lookup', 30),
   notify: rateLimit('notify', 10),
